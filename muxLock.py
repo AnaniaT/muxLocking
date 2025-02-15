@@ -189,4 +189,4 @@ def mux2_lock(bench_file_path, key_size, out_bench_file_path="output.bench"):
     
     
 keySize = 2 
-mux2_lock("b.bench", keySize, "output2.bench")
+mux2_lock("b.bench", keySize, "output.bench")

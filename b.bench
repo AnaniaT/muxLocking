@@ -1,0 +1,18 @@
+
+
+INPUT(a)
+INPUT(b)
+INPUT(c)
+INPUT(d)
+INPUT(e)
+
+OUTPUT(w8)
+
+w1 = AND(a, b)
+w2 = OR(c      , d)
+w3 = NOT(e)
+w4 = AND       (w1, w2      )
+w5 = OR(w4, w3)
+w6 = XOR(w1, w2)
+w7 = NAND(w5, w6)
+w8 = NOR(w7, w3)
