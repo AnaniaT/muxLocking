@@ -34,7 +34,19 @@ def parse_ckt(bench_file_path: str) -> nx.DiGraph:
     gateDict = {}
     muxDict = {}
     
-       
+    feat, cell, count = '', '', ''
+    ML_count = 0   
+    gateVecDict = {
+        'xor':[0,1,0,0,0,0,0,0],
+        'or':[0,0,1,0,0,0,0,0],
+        'xnor':[0,0,0,1,0,0,0,0],
+        'and':[0,0,0,0,1,0,0,0],
+        'nand':[0,0,0,0,0,1,0,0],
+        'buf':[0,0,0,0,0,0,0,1],
+        'not':[0,0,0,0,0,0,1,0],
+        'nor':[1,0,0,0,0,0,0,0],
+    }
+    
     try:
         with open(bench_file_path, 'r') as file:
             for line in file:
@@ -59,6 +71,11 @@ def parse_ckt(bench_file_path: str) -> nx.DiGraph:
                     
                     for inwire in cleanInWireList(inWires):
                         tempG.add_edge(inwire, outWire)
+                        
+                    feat += f'{' '.join(gateVecDict[gate.lower()])}\n'
+                    cell += f'{ML_count} assign for output {outWire}\n'
+                    count += f'{ML_count}\n'
+                    ML_count+=1
                 else:
                     # raise error if not empty line
                     if line.strip() != "":
