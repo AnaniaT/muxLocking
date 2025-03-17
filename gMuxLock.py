@@ -4,11 +4,12 @@ import networkx as nx
 import matplotlib.pyplot as plt
 
 def generate_key_list(key_size: int):
-    if key_size%2 != 0:
-        raise ValueError("Key size should be a multiple of two")
+    # if key_size%2 != 0:
+    #     raise ValueError("Key size should be a multiple of two")
     
     # random 1:1 combination of zeros and ones
-    key_list = [0] * int(key_size/2) + [1] *int(key_size/2)
+    key_mid = key_size//2
+    key_list = [0] * int(key_mid) + [1] *int(key_size-key_mid)
     # If odd keysize is also allowed this should work
     # key_list = [0] * int(key_size/2) + [1] * (key_size - int(key_size/2))
     random.shuffle(key_list)    
@@ -70,7 +71,7 @@ def parse_ckt(bench_file_path: str) -> nx.DiGraph:
     return tempG, (gateDict, muxDict) #infoDict
 
 
-def insertMux(tempG:nx.DiGraph, infoDict: dict, keySize: int):
+def insertMux(tempG:nx.DiGraph, infoDict: list[dict], keySize: int):
     nodeList = list(tempG.nodes)
     gateDict, muxDict = infoDict
     
@@ -98,6 +99,14 @@ def insertMux(tempG:nx.DiGraph, infoDict: dict, keySize: int):
             tempG.remove_edge(gateNode, oNode)
             tempG.add_edge(muxNode, oNode)
             
+            # Update the MUX dict if the out node is a MUX
+            if oNode in muxDict.keys():
+                if muxDict[oNode][0] == gateNode:
+                    muxDict[oNode][0] = muxNode
+                elif muxDict[oNode][1] == gateNode:
+                    muxDict[oNode][1] = muxNode
+                else:
+                    muxDict[oNode]['key'] = muxNode
             
         # Code breaks here if fPool is zero (all nodes are reachable from the node to be locked)
         # Sampling from set depreciated apparently
@@ -161,12 +170,19 @@ def draw_graph(tempG: nx.DiGraph, name:str = "Graph"):
     plt.title(name)
     plt.show(block=False)
 
-G, infoDict = parse_ckt('b.bench')
-draw_graph(G)
-insertMux(G, infoDict, 4)
-reconstruct_bench(G, infoDict, "gOut2.bench")
-draw_graph(G)
-input("..")
+quickTest = True
+
+if quickTest:
+    G, infoDict = parse_ckt('b.bench')
+    insertMux(G, infoDict, 4)
+else:
+    G, infoDict = parse_ckt('b14_C.bench')
+    insertMux(G, infoDict, 64)
+
+# reconstruct_bench(G, infoDict, "gOut2.bench")
+# draw_graph(G)
+# draw_graph(G)
+# input("..")
 """
 G, infoDict = parse_ckt('b.bench')
 # G = parse_ckt('b14_C.bench')
