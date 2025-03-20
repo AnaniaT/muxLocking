@@ -1,2 +1,6 @@
 neos/
 venv/
+test/*
+data/*
+__pycache__/
+dmux.py

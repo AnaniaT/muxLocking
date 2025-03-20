@@ -1,5 +1,5 @@
 import networkx as nx
-from gMuxLock import G, infoDict, generate_key_list
+from utils import generate_key_list, parse_ckt
 
 print('---Attack---')
 def saam(g: nx.DiGraph, iDict: dict):
@@ -41,8 +41,10 @@ def saam2(g: nx.DiGraph, iDict: dict):
     looseNCount = 0
     looseNodes = []
     gateDict, muxDict = iDict
-    for i, muxNode in enumerate(muxList):
+    for i in range(len(keyList)):
         key = keyList[i]
+        muxNode = "mux_"+str(i)
+        
         offNode = muxDict[muxNode][1-key]
         print(f"{offNode} -> {list(tempG.successors(offNode))}")
         
@@ -63,5 +65,5 @@ def saam2(g: nx.DiGraph, iDict: dict):
     print(keyList)
     print(f"{(looseNCount*100/len(keyList)):.2f}% of keys resolved!")
 
-
+G, infoDict = parse_ckt('gOut3.bench')
 saam2(G, infoDict)

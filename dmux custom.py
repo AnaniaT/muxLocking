@@ -1,25 +1,14 @@
-import copy
-import re, random
+import os, random, sys, re
 import networkx as nx
-import matplotlib.pyplot as plt
 
-def generate_key_list(key_size: int):
-    # if key_size%2 != 0:
-    #     raise ValueError("Key size should be a multiple of two")
-    
-    # random 1:1 combination of zeros and ones
-    key_mid = key_size//2
-    key_list = [0] * int(key_mid) + [1] *int(key_size-key_mid)
-    # If odd keysize is also allowed this should work
-    # key_list = [0] * int(key_size/2) + [1] * (key_size - int(key_size/2))
-    random.shuffle(key_list)    
-    return key_list
+from utils import generate_key_list, reconstruct_bench, cleanInWireList
 
-def cleanInWireList(inWiresStr: str):
-    inWiresStr.strip()
-    if inWiresStr[-1] == ",":
-        inWiresStr = inWiresStr[:-1]
-    return [x.strip() for x in inWiresStr.split(',')]
+feat, cell, count = '', '', ''
+ML_count = 0 
+link_train = ''
+link_test = ''
+link_test_n = ''
+
 
 def parse_ckt(bench_file_path: str) -> nx.DiGraph:
     tempG = nx.DiGraph()
@@ -34,8 +23,7 @@ def parse_ckt(bench_file_path: str) -> nx.DiGraph:
     gateDict = {}
     muxDict = {}
     
-    feat, cell, count = '', '', ''
-    ML_count = 0   
+    global feat, cell, count, ML_count, link_train
     gateVecDict = {
         'xor':[0,1,0,0,0,0,0,0],
         'or':[0,0,1,0,0,0,0,0],
@@ -71,10 +59,11 @@ def parse_ckt(bench_file_path: str) -> nx.DiGraph:
                     
                     for inwire in cleanInWireList(inWires):
                         tempG.add_edge(inwire, outWire)
-                        
-                    feat += f'{' '.join(gateVecDict[gate.lower()])}\n'
-                    cell += f'{ML_count} assign for output {outWire}\n'
-                    count += f'{ML_count}\n'
+                    
+                    tempG.nodes[outWire]['count'] = ML_count    
+                    feat += f"{' '.join([str(x) for x in gateVecDict[gate.lower()]])}\n"
+                    cell += f"{ML_count} assign for output {outWire}\n"
+                    count += f"{ML_count}\n"
                     ML_count+=1
                 else:
                     # raise error if not empty line
@@ -82,15 +71,19 @@ def parse_ckt(bench_file_path: str) -> nx.DiGraph:
                         raise Exception('Bad Bench File')
                     
     except FileNotFoundError:
-        print(f"Error: The file {bench_file_path} was not found.")
+        sys.exit(f"Error: The file {bench_file_path} was not found.")
     except Exception as e:
-        print(f"An error occurred: {e}")
+        sys.exit(f"Unknown error occurred: {e}")    
+    
+    for u, v in tempG.edges:
+        if 'count' in tempG.nodes[u].keys() and 'count' in tempG.nodes[v].keys():
+            link_train += f"{tempG.nodes[u]['count']} {tempG.nodes[v]['count']}\n"
         
     return tempG, (gateDict, muxDict) #infoDict
 
-
 def insertMux(tempG:nx.DiGraph, infoDict: list[dict], keySize: int):
-    nodeList = list(tempG.nodes)
+    # Selection pool excludes inputs and outputs
+    nodeList = [x for x in tempG.nodes if 'count' in tempG.nodes[x].keys() and tempG.out_degree(x) > 0]
     gateDict, muxDict = infoDict
     
     key_list = generate_key_list(keySize)
@@ -98,25 +91,35 @@ def insertMux(tempG:nx.DiGraph, infoDict: list[dict], keySize: int):
     selected_gates = random.sample(nodeList, keySize)
     print(selected_gates)
 
+    global link_train, link_test, link_test_n
+    
     c = 0
     fPool = set(nodeList)
     for gateNode in selected_gates:
         muxNode = 'mux_' + str(c)
         keyNode = 'key_' + str(c)
         
-        outNodes = list(tempG.successors(gateNode))
+        # All nodes next to gateNode except locking muxes (they appear when the gateNode had been selected as false wire)
+        outNodes = list([x for x in tempG.successors(gateNode) if 'count' in tempG.nodes[x].keys()])
         
         # Avoid nodes causing loops(successors) and cycles(decendants of successors)
         badFGates = nx.descendants(tempG, gateNode)
         fPool.difference_update(badFGates)
         # Avoid reselection
         fPool.remove(gateNode)
+        # Code breaks here if fPool is zero (all nodes are reachable from the node to be locked)
+        # Sampling from set depreciated apparently
+        fGate = random.sample(list(fPool), 1)[0]
         
         # MUX replacement
         for oNode in outNodes:
             tempG.remove_edge(gateNode, oNode)
             tempG.add_edge(muxNode, oNode)
             
+            link_train = link_train.replace(f"{tempG.nodes[gateNode]['count']} {tempG.nodes[oNode]['count']}\n", "")
+            link_test += f"{tempG.nodes[gateNode]['count']} {tempG.nodes[oNode]['count']}\n"
+            link_test_n += f"{tempG.nodes[fGate]['count']} {tempG.nodes[oNode]['count']}\n"
+        
             # Update the MUX dict if the out node is a MUX
             if oNode in muxDict.keys():
                 if muxDict[oNode][0] == gateNode:
@@ -126,9 +129,6 @@ def insertMux(tempG:nx.DiGraph, infoDict: list[dict], keySize: int):
                 else:
                     muxDict[oNode]['key'] = muxNode
             
-        # Code breaks here if fPool is zero (all nodes are reachable from the node to be locked)
-        # Sampling from set depreciated apparently
-        fGate = random.sample(list(fPool), 1)[0]
         
         tempG.add_edge(fGate, muxNode)        
         tempG.add_edge(keyNode, muxNode)        
@@ -146,89 +146,96 @@ def insertMux(tempG:nx.DiGraph, infoDict: list[dict], keySize: int):
         gateDict[muxNode] = "MUX"
         
         c+=1
-        fPool = set(tempG.nodes) # Restore the fake node pool
+        fPool = set(nodeList) # Restore the fake node pool
+
+
+def insertMux2(tempG:nx.DiGraph, infoDict: list[dict], keySize: int):
+    # Selection pool must exclude input n outputs since we lock the outedges
+    nodeList = [x for x in tempG.nodes if tempG.out_degree(x) > 0 and 'count' in tempG.nodes[x].keys()]
+    gateDict, muxDict = infoDict
+    
+    key_list = generate_key_list(keySize)
+    print(key_list)
+    selected_gates = random.sample(nodeList, keySize)
+    print(selected_gates)
+
+    global link_train, link_test, link_test_n
+    
+    c = 0
+    fPool = set(nodeList)
+    for gateNode in selected_gates:
+        muxNode = 'mux_' + str(c)
+        keyNode = 'key_' + str(c)
+        
+        # All nodes next to gateNode except locking muxes (they appear when the gateNode had been selected as false wire)
+        # Avoids nested locking
+        outNodes = [x for x in tempG.successors(gateNode) if 'count' in tempG.nodes[x].keys()]
+        
+        endNode = random.choice(outNodes)
+        
+        # Avoid nodes causing loops(successors) and cycles(decendants of successors)
+        badFGates = nx.descendants(tempG, endNode)
+        fPool.difference_update(badFGates)
+        # Avoid reselection
+        fPool.discard(gateNode)
+        # Avoid self-selection
+        fPool.discard(endNode)
+        
+        # Should also remove nodes that already point to the endnode here
+        # But this is left intentionally
+        
+        # Code breaks here if fPool is zero (all nodes are reachable from the node to be locked)
+        # Sampling from set depreciated apparently
+        fGate = random.choice(list(fPool))
+        
+        tempG.remove_edge(gateNode, endNode)
+        tempG.add_edge(muxNode, endNode)
+                
+        tempG.add_edge(gateNode, muxNode)        
+        tempG.add_edge(fGate, muxNode)        
+        tempG.add_edge(keyNode, muxNode)
+        
+        link_train = link_train.replace(f"{tempG.nodes[gateNode]['count']} {tempG.nodes[endNode]['count']}\n", "")
+        link_test += f"{tempG.nodes[gateNode]['count']} {tempG.nodes[endNode]['count']}\n"
+        link_test_n += f"{tempG.nodes[fGate]['count']} {tempG.nodes[endNode]['count']}\n"
+      
+        # update the infoDict
+        if key_list[c] == 0:
+            input0 = gateNode
+            input1 = fGate
+        else:
+            input0 = fGate
+            input1 = gateNode
+        muxDict[muxNode] = {"key": keyNode, 0: input0 , 1: input1}
+        gateDict[muxNode] = "MUX"
+        
+        c+=1
+        fPool = set(nodeList) # Restore the fake node pool
         
 
-def reconstruct_bench(tempG: nx.DiGraph, infoDict: dict, out_bench_file_path: str = "output.bench"):
-    inputs = ""
-    outputs = ""
-    logicOps = ""
-    
-    gateDict, muxDict = infoDict
-    for node in list(tempG.nodes):
-        if tempG.in_degree(node) == 0:
-            inputs += f"INPUT({node})\n"
-        else:
-            if tempG.out_degree(node) == 0:
-                outputs += f"OUTPUT({node})\n"
-            
-            gateName = gateDict[node]
-            if gateName.lower() == "mux":
-                mux = muxDict[node]
-                inWiresStr = f"{mux['key']}, {mux[0]}, {mux[1]}"
-            else:
-                inWiresStr = ", ".join(tempG.predecessors(node))
-                
-            logicOps += f"{node} = {gateName}({inWiresStr})\n"
-    
-    
-    try:
-        with open(out_bench_file_path, "w") as file:
-            file.write(inputs+"\n" + outputs+"\n"+ logicOps)
-                
-        print(f"Bench file successfully written to {out_bench_file_path}")
-    except Exception as e:
-        print(f"Error writing file: {e}") 
 
-def draw_graph(tempG: nx.DiGraph, name:str = "Graph"):
-    # Draw the graph
-    plt.figure(figsize=(6, 4))
-    pos = nx.spring_layout(tempG)  # Positions for nodes
-    nx.draw(tempG, pos, with_labels=True, node_color="lightblue", edge_color="black", node_size=2000, font_size=12, arrows=True)
-    plt.title(name)
-    plt.show(block=False)
+longTest = bool(sys.argv[1] == "1")
 
-quickTest = True
-
-if quickTest:
+if not longTest:
     G, infoDict = parse_ckt('b.bench')
-    insertMux(G, infoDict, 4)
+    insertMux2(G, infoDict, 4)
 else:
     G, infoDict = parse_ckt('b14_C.bench')
-    insertMux(G, infoDict, 64)
+    insertMux2(G, infoDict, 64)
 
-# reconstruct_bench(G, infoDict, "gOut2.bench")
-# draw_graph(G)
-# draw_graph(G)
-# input("..")
-"""
-G, infoDict = parse_ckt('b.bench')
-# G = parse_ckt('b14_C.bench')
-# print(list(G.nodes))
-G0 = copy.deepcopy(G)
+if not os.path.exists("./data"):
+    os.mkdir("./data")
+with open('./data/cell.txt', "w") as f:
+    f.write(cell)
+with open('./data/feat.txt', "w") as f:
+    f.write(feat)
+with open('./data/count.txt', "w") as f:
+    f.write(count)
+with open('./data/linkTrain.txt', "w") as f:
+    f.write(link_train)
+with open('./data/linkTest.txt', "w") as f:
+    f.write(link_test)
+with open('./data/linkTestN.txt', "w") as f:
+    f.write(link_test_n)
 
-insertMux(G, infoDict, 2)
-
-reconstruct_bench(G, infoDict, "gOut.bench")
-
-G2, infoDict2 = parse_ckt('gOut.bench')
-
-
-# Create a figure with 1 row, 2 columns
-fig, axes = plt.subplots(1, 3, figsize=(10, 5))
-
-# Draw the first graph
-nx.draw(G0, ax=axes[0], with_labels=True, node_color="lightblue", edge_color="gray")
-axes[0].set_title("Before")
-
-# Draw the first graph
-nx.draw(G, ax=axes[1], with_labels=True, node_color="grey", edge_color="gray")
-axes[1].set_title("After 1")
-
-# Draw the second graph
-nx.draw(G2, ax=axes[2], with_labels=True, node_color="lightgreen", edge_color="red")
-axes[2].set_title("After 2")
-
-# Show both graphs
-plt.show()
-"""
+reconstruct_bench(G, infoDict, "gOut3.bench")
