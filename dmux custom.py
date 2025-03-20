@@ -231,11 +231,11 @@ with open('./data/feat.txt', "w") as f:
     f.write(feat)
 with open('./data/count.txt', "w") as f:
     f.write(count)
-with open('./data/linkTrain.txt', "w") as f:
+with open('./data/links_train.txt', "w") as f:
     f.write(link_train)
-with open('./data/linkTest.txt', "w") as f:
+with open('./data/links_test.txt', "w") as f:
     f.write(link_test)
-with open('./data/linkTestN.txt', "w") as f:
+with open('./data/link_test_n.txt', "w") as f:
     f.write(link_test_n)
 
 reconstruct_bench(G, infoDict, "gOut3.bench")
