@@ -99,14 +99,14 @@ def parse_ckt(bench_file_path: str, involveFiles : bool = False) -> nx.DiGraph:
     return tempG, (gateDict, muxDict) #infoDict
 
 
-def reconstruct_bench(tempG: nx.DiGraph, infoDict: dict, out_bench_file_path: str = "output.bench"):
+def reconstruct_bench(tempG: nx.DiGraph, infoDict: dict, keyList:list, outBenchName: str = "output.bench", outDir="data"):
     inputs = ""
     outputs = ""
     logicOps = ""
     
     gateDict, muxDict = infoDict
     for node in list(tempG.nodes):
-        if tempG.in_degree(node) == 0:
+        if tempG.in_degree(node) == 0: # might catch floating nodes
             inputs += f"INPUT({node})\n"
         else:
             if tempG.out_degree(node) == 0:
@@ -121,12 +121,13 @@ def reconstruct_bench(tempG: nx.DiGraph, infoDict: dict, out_bench_file_path: st
                 
             logicOps += f"{node} = {gateName}({inWiresStr})\n"
     
-    
     try:
-        with open(out_bench_file_path, "w") as file:
+        with open(f"./data/{outBenchName}_DMUX/{outBenchName}.bench", "w") as file:
+            strKList = map(lambda k: str(k), keyList)
+            file.write(f"#key={''.join(strKList)}\n")
             file.write(inputs+"\n" + outputs+"\n"+ logicOps)
                 
-        print(f"Bench file successfully written to {out_bench_file_path}")
+        print(f"Bench file successfully written to {outBenchName}.bench")
     except Exception as e:
         print(f"Error writing file: {e}") 
         

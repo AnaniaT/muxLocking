@@ -1,8 +1,0 @@
-0 assign for output w1
-1 assign for output w2
-2 assign for output w3
-3 assign for output w4
-4 assign for output w5
-5 assign for output w6
-6 assign for output w7
-7 assign for output w8

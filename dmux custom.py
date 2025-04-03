@@ -164,14 +164,15 @@ def insertMux2(tempG:nx.DiGraph, infoDict: list[dict], keySize: int):
     c = 0
     fPool = set(nodeList)
     for gateNode in selected_gates:
-        muxNode = 'mux_' + str(c)
-        keyNode = 'key_' + str(c)
-        
         # All nodes next to gateNode except locking muxes (they appear when the gateNode had been selected as false wire)
         # Avoids nested locking
         outNodes = [x for x in tempG.successors(gateNode) if 'count' in tempG.nodes[x].keys()]
         
         endNode = random.choice(outNodes)
+        
+        # Complicent naming as original dmux
+        muxNode = endNode+'_from_mux'
+        keyNode = 'keyinput' + str(c)
         
         # Avoid nodes causing loops(successors) and cycles(decendants of successors)
         badFGates = nx.descendants(tempG, endNode)
@@ -211,31 +212,40 @@ def insertMux2(tempG:nx.DiGraph, infoDict: list[dict], keySize: int):
         
         c+=1
         fPool = set(nodeList) # Restore the fake node pool
-        
+    
+    return key_list        
 
 
 longTest = bool(sys.argv[1] == "1")
 
 if not longTest:
-    G, infoDict = parse_ckt('b.bench')
-    insertMux2(G, infoDict, 4)
+    bench = "b"
+    kSize = 4
 else:
-    G, infoDict = parse_ckt('b14_C.bench')
-    insertMux2(G, infoDict, 64)
+    bench = "b14_C"
+    kSize = 32
+
+G, infoDict = parse_ckt(bench+'.bench')
+kList = insertMux2(G, infoDict, kSize)
+
 
 if not os.path.exists("./data"):
     os.mkdir("./data")
-with open('./data/cell.txt', "w") as f:
+
+if not os.path.exists(f"./data/{bench}_K{kSize}_DMUX"):
+    os.mkdir(f"./data/{bench}_K{kSize}_DMUX")
+    
+with open(f'./data/{bench}_K{kSize}_DMUX/cell.txt', "w") as f:
     f.write(cell)
-with open('./data/feat.txt', "w") as f:
+with open(f'./data/{bench}_K{kSize}_DMUX/feat.txt', "w") as f:
     f.write(feat)
-with open('./data/count.txt', "w") as f:
+with open(f'./data/{bench}_K{kSize}_DMUX/count.txt', "w") as f:
     f.write(count)
-with open('./data/links_train.txt', "w") as f:
+with open(f'./data/{bench}_K{kSize}_DMUX/links_train.txt', "w") as f:
     f.write(link_train)
-with open('./data/links_test.txt', "w") as f:
+with open(f'./data/{bench}_K{kSize}_DMUX/links_test.txt', "w") as f:
     f.write(link_test)
-with open('./data/link_test_n.txt', "w") as f:
+with open(f'./data/{bench}_K{kSize}_DMUX/link_test_n.txt', "w") as f:
     f.write(link_test_n)
 
-reconstruct_bench(G, infoDict, "gOut3.bench")
+reconstruct_bench(G, infoDict, kList, f"{bench}_K{kSize}")
