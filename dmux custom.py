@@ -216,36 +216,47 @@ def insertMux2(tempG:nx.DiGraph, infoDict: list[dict], keySize: int):
     return key_list        
 
 
-longTest = bool(sys.argv[1] == "1")
-
-if not longTest:
-    bench = "b"
-    kSize = 4
-else:
-    bench = "b14_C"
-    kSize = 32
-
-G, infoDict = parse_ckt(bench+'.bench')
-kList = insertMux2(G, infoDict, kSize)
+def main(bench, kSize):    
+    G, infoDict = parse_ckt('./Benchmarks/'+bench+'.bench')
+    kList = insertMux2(G, infoDict, kSize)
 
 
-if not os.path.exists("./data"):
-    os.mkdir("./data")
+    if not os.path.exists("./data"):
+        os.mkdir("./data")
 
-if not os.path.exists(f"./data/{bench}_K{kSize}_DMUX"):
-    os.mkdir(f"./data/{bench}_K{kSize}_DMUX")
-    
-with open(f'./data/{bench}_K{kSize}_DMUX/cell.txt', "w") as f:
-    f.write(cell)
-with open(f'./data/{bench}_K{kSize}_DMUX/feat.txt', "w") as f:
-    f.write(feat)
-with open(f'./data/{bench}_K{kSize}_DMUX/count.txt', "w") as f:
-    f.write(count)
-with open(f'./data/{bench}_K{kSize}_DMUX/links_train.txt', "w") as f:
-    f.write(link_train)
-with open(f'./data/{bench}_K{kSize}_DMUX/links_test.txt', "w") as f:
-    f.write(link_test)
-with open(f'./data/{bench}_K{kSize}_DMUX/link_test_n.txt', "w") as f:
-    f.write(link_test_n)
+    if not os.path.exists(f"./data/{bench}_K{kSize}_DMUX"):
+        os.mkdir(f"./data/{bench}_K{kSize}_DMUX")
+        
+    with open(f'./data/{bench}_K{kSize}_DMUX/cell.txt', "w") as f:
+        f.write(cell)
+    with open(f'./data/{bench}_K{kSize}_DMUX/feat.txt', "w") as f:
+        f.write(feat)
+    with open(f'./data/{bench}_K{kSize}_DMUX/count.txt', "w") as f:
+        f.write(count)
+    with open(f'./data/{bench}_K{kSize}_DMUX/links_train.txt', "w") as f:
+        f.write(link_train)
+    with open(f'./data/{bench}_K{kSize}_DMUX/links_test.txt', "w") as f:
+        f.write(link_test)
+    with open(f'./data/{bench}_K{kSize}_DMUX/link_test_n.txt', "w") as f:
+        f.write(link_test_n)
 
-reconstruct_bench(G, infoDict, kList, f"{bench}_K{kSize}")
+    reconstruct_bench(G, infoDict, kList, f"{bench}_K{kSize}")
+
+for k in [64, 128, 256]:
+    main("c1908", k)
+    # main("c2670", k)
+
+for k in [256, 512]:
+    main("b14_C", k)
+    # main("b15_C", k)
+
+for f in os.listdir('./Benchmarks'):
+    if os.path.isfile('./Benchmarks/'+f):
+        if f != 'b.bench' and 'b14' not in f:
+            if f.startswith('b'):
+                for k in [256, 512]:
+                    main(f.split('.')[0], k)
+            else:
+                for k in [64, 128, 256]:
+                    main(f.split('.')[0], k)
+            
