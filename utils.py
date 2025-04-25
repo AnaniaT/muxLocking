@@ -3,8 +3,8 @@ import networkx as nx
 import matplotlib.pyplot as plt
 
 def generate_key_list(key_size: int):
-    # if key_size%2 != 0:
-    #     raise ValueError("Key size should be a multiple of two")
+    if key_size%2 != 0:
+        raise ValueError("Key size should be a multiple of two")
     
     # random 1:1 combination of zeros and ones
     key_mid = key_size//2
@@ -81,8 +81,8 @@ def parse_ckt(bench_file_path: str, involveFiles : bool = False) -> nx.DiGraph:
                         count += f"{ML_count}\n"
                         ML_count+=1
                 else:
-                    # raise error if not empty line
-                    if line.strip() != "":
+                    # raise error if not empty line or not a comment
+                    if line.strip() != "" and not line.strip().startswith('#'):
                         raise Exception('Bad Bench File')
                     
     except FileNotFoundError:
@@ -99,10 +99,14 @@ def parse_ckt(bench_file_path: str, involveFiles : bool = False) -> nx.DiGraph:
     return tempG, (gateDict, muxDict) #infoDict
 
 
-def reconstruct_bench(tempG: nx.DiGraph, infoDict: dict, keyList:list, outBenchName: str = "output.bench", outDir="data"):
+def reconstruct_bench(tempG: nx.DiGraph, infoDict: dict, keyList:list, outBenchName: str = "output.bench", dumpHere=False):
     inputs = ""
     outputs = ""
     logicOps = ""
+    
+    outDir = f"./data/{outBenchName}_DMUX"
+    if dumpHere:
+        outDir = "."
     
     gateDict, muxDict = infoDict
     for node in list(tempG.nodes):
@@ -122,7 +126,7 @@ def reconstruct_bench(tempG: nx.DiGraph, infoDict: dict, keyList:list, outBenchN
             logicOps += f"{node} = {gateName}({inWiresStr})\n"
     
     try:
-        with open(f"./data/{outBenchName}_DMUX/{outBenchName}.bench", "w") as file:
+        with open(f"{outDir}/{outBenchName}.bench", "w") as file:
             strKList = map(lambda k: str(k), keyList)
             file.write(f"#key={''.join(strKList)}\n")
             file.write(inputs+"\n" + outputs+"\n"+ logicOps)
