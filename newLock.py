@@ -11,8 +11,35 @@ ML_count = 0
 link_train = ''
 link_test = ''
 link_test_n = ''
+gateVecDict = {
+            'xor':[0,1,0,0,0,0,0,0],
+            'or':[0,0,1,0,0,0,0,0],
+            'xnor':[0,0,0,1,0,0,0,0],
+            'and':[0,0,0,0,1,0,0,0],
+            'nand':[0,0,0,0,0,1,0,0],
+            'buf':[0,0,0,0,0,0,0,1],
+            'not':[0,0,0,0,0,0,1,0],
+            'nor':[1,0,0,0,0,0,0,0],
+        }
 
-def gen_subgraph(G:nx.DiGraph, start_node, depth=2):
+def alter_gate(gate:str):
+    gatePair = {
+        'AND': 'NAND',       # 2-input, different logic
+        'NAND': 'AND',       # same as above
+        'OR': 'NOR',         # 2-input, opposite logic
+        'NOR': 'OR',
+        'XOR': 'XNOR',       # both 2-inputs, different logic
+        'XNOR': 'XOR',
+        'NOT': 'BUF',     # 1-input, different logic
+        'BUF': 'NOT',     # passes input unchanged
+        'MUX': 'AND'
+    }
+    return gatePair[gate.upper()]
+
+def gen_subgraph(G:nx.DiGraph, start_node, depth=2, dumpFiles=False):
+    if dumpFiles:
+        global feat, cell, count, ML_count, link_train
+        
     current_layer = {start_node}
     targetCkt = set()
     for l in range(depth):
@@ -22,11 +49,20 @@ def gen_subgraph(G:nx.DiGraph, start_node, depth=2):
             
             if G.nodes[origNode]['type'] != "input":
                 artNode = origNode+"_sub"
+                artNodeGate = alter_gate(G.nodes[origNode]['gate'])
+                G.add_node(artNode, type='gate', isArt=True, gate=artNodeGate)
+                
+                if dumpFiles:
+                    # avoid counting artNodes which were already setup
+                    if not 'count' in G.nodes[artNode]:
+                        G.nodes[artNode]['count'] = ML_count    
+                        feat += f"{' '.join([str(x) for x in gateVecDict[artNodeGate.lower()]])}\n"
+                        cell += f"{ML_count} assign for output {artNode}\n"
+                        count += f"{ML_count}\n"
+                        ML_count+=1
             else:
                 artNode = origNode
-                
-            G.add_node(artNode)
-            
+                            
             if origNode == start_node:
                 continue
             
@@ -35,6 +71,9 @@ def gen_subgraph(G:nx.DiGraph, start_node, depth=2):
                 artSuccNode = succ + "_sub"
                 if succ in targetCkt:
                     G.add_edge(artNode, artSuccNode)
+                    
+                    if dumpFiles and G.nodes[origNode]['type'] != "input":
+                        link_train += f"{G.nodes[artNode]['count']} {G.nodes[artSuccNode]['count']}\n"
                 # else:
                 #     G.add_edge(artNode, succ) 
                 # although this seems deceptive it actually ruins the functionality of the succ
@@ -50,6 +89,12 @@ def gen_subgraph(G:nx.DiGraph, start_node, depth=2):
             if succ in targetCkt:
                 artSuccNode = succ + "_sub"
                 G.add_edge(origNode, artSuccNode)
+
+                if dumpFiles:
+                    # Avoids inputs, keyinputs and muxes when stiching the ckt
+                    if 'count' in G.nodes[origNode]:
+                        link_train += f"{G.nodes[origNode]['count']} {G.nodes[artSuccNode]['count']}\n"
+
     
     
 def get_backward_subgraph(G:nx.DiGraph, start_node, depth=4):
@@ -104,16 +149,7 @@ def parse_ckt(bench_file_path: str, dumpFiles:bool) -> nx.DiGraph:
     
     if dumpFiles:
         global feat, cell, count, ML_count, link_train
-        gateVecDict = {
-            'xor':[0,1,0,0,0,0,0,0],
-            'or':[0,0,1,0,0,0,0,0],
-            'xnor':[0,0,0,1,0,0,0,0],
-            'and':[0,0,0,0,1,0,0,0],
-            'nand':[0,0,0,0,0,1,0,0],
-            'buf':[0,0,0,0,0,0,0,1],
-            'not':[0,0,0,0,0,0,1,0],
-            'nor':[1,0,0,0,0,0,0,0],
-        }
+        
     
     try:
         with open(bench_file_path, 'r') as file:
@@ -142,7 +178,10 @@ def parse_ckt(bench_file_path: str, dumpFiles:bool) -> nx.DiGraph:
                     for inwire in cleanInWireList(inWires):
                         tempG.add_edge(inwire, outWire)
                     
-                    tempG.nodes[outWire]['type'] = 'gate'
+                    # done so that we dont override the output type setting above
+                    if not 'type' in tempG.nodes[outWire].keys():
+                        tempG.nodes[outWire]['type'] = 'gate'
+                    tempG.nodes[outWire]['gate'] = gate
                     
                     if dumpFiles:
                         tempG.nodes[outWire]['count'] = ML_count    
@@ -225,16 +264,18 @@ def insertMuxNew(tempG:nx.DiGraph, infoDict: list[dict], keySize: int, dumpFiles
             # subG, deepest_nodes = get_backward_subgraph(tempG, gateNode)
             # stitch_subgraph(tempG, subG, deepest_nodes, suffix)
             # Second version
-            gen_subgraph(tempG, gateNode)
+            gen_subgraph(tempG, gateNode, depth=2, dumpFiles=dumpFiles)
             
             fGate = f"{gateNode}{suffix}"
         
         tempG.remove_edge(gateNode, endNode)
         tempG.add_edge(muxNode, endNode)
         tempG.nodes[muxNode]['type'] = 'mux'
+        tempG.nodes[muxNode]['gate'] = 'MUX'
                 
         tempG.add_edge(gateNode, muxNode)        
-        tempG.add_edge(fGate, muxNode)        
+        tempG.add_edge(fGate, muxNode)  
+        tempG.add_node(keyNode, type='input', isKey=True)      
         tempG.add_edge(keyNode, muxNode)
         
         if dumpFiles:
@@ -273,33 +314,35 @@ def draw_neat_digraph(G, title=None, node_size=800):
     plt.tight_layout()
     plt.show()
 
-def main(bench, kSize, dumpFiles=False):    
+def main(bench, kSize, dumpFiles=False, drawGraph=True):    
     G, infoDict = parse_ckt('./Benchmarks/'+bench+'.bench', dumpFiles)
     kList = insertMuxNew(G, infoDict, kSize, dumpFiles)
 
     if dumpFiles:
-        dumpDir = "./data/new"
+        dumpDir = "./data/"
         if not os.path.exists(dumpDir):
             os.mkdir(dumpDir)
 
         if not os.path.exists(f"{dumpDir}/{bench}_K{kSize}_DMUX"):
             os.mkdir(f"{dumpDir}/{bench}_K{kSize}_DMUX")
-            
-        with open(f'{dumpDir}/{bench}_K{kSize}_DMUX/cell.txt', "w") as f:
+        
+        dumpDir = f"{dumpDir}/{bench}_K{kSize}_DMUX"
+        with open(f'{dumpDir}/cell.txt', "w") as f:
             f.write(cell)
-        with open(f'{dumpDir}/{bench}_K{kSize}_DMUX/feat.txt', "w") as f:
+        with open(f'{dumpDir}/feat.txt', "w") as f:
             f.write(feat)
-        with open(f'{dumpDir}/{bench}_K{kSize}_DMUX/count.txt', "w") as f:
+        with open(f'{dumpDir}/count.txt', "w") as f:
             f.write(count)
-        with open(f'{dumpDir}/{bench}_K{kSize}_DMUX/links_train.txt', "w") as f:
+        with open(f'{dumpDir}/links_train.txt', "w") as f:
             f.write(link_train)
-        with open(f'{dumpDir}/{bench}_K{kSize}_DMUX/links_test.txt', "w") as f:
+        with open(f'{dumpDir}/links_test.txt', "w") as f:
             f.write(link_test)
-        with open(f'{dumpDir}/{bench}_K{kSize}_DMUX/link_test_n.txt', "w") as f:
+        with open(f'{dumpDir}/link_test_n.txt', "w") as f:
             f.write(link_test_n)
 
-    reconstruct_bench(G, infoDict, kList, f"{bench}_K{kSize}", True)
-    draw_neat_digraph(G, "New Lock")
+    reconstruct_bench(G, infoDict, kList, f"{bench}_K{kSize}", not dumpFiles)
+    if drawGraph:
+        draw_neat_digraph(G, "New Lock")
 
-main('mid', 4)
+main('b22_C', 256, dumpFiles=True, drawGraph=False)
             
