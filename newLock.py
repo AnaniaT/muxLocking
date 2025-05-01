@@ -229,6 +229,10 @@ def insertMuxNew(tempG:nx.DiGraph, infoDict: list[dict], keySize: int, dumpFiles
     nodeList = oneOutNodeList + multiOutNodeList
     selected_gates = oneOutSelectedGates + multiOutSelectedGates
     fPool = set(nodeList)
+    
+    alreadyLocked = set()
+    skippedOneOutGates = 0
+    skippedMultiOutGates = 0
     for gateNode in selected_gates:
         # print(gateNode)
         # All nodes next to gateNode except locking muxes (they appear when the gateNode had been selected as false wire)
@@ -236,10 +240,36 @@ def insertMuxNew(tempG:nx.DiGraph, infoDict: list[dict], keySize: int, dumpFiles
         outNodes = [x for x in tempG.successors(gateNode) if tempG.nodes[x]['type'] == 'gate' or tempG.nodes[x]['type'] == 'output']
         endNode = random.choice(outNodes)
         
+        # A temporary fix for the common-endNode problem
+        retries = 0
+        while endNode in alreadyLocked:
+            outNodes.remove(endNode)
+            if len(outNodes) > 0:
+                endNode = random.choice(outNodes)
+            elif retries >= 1: # if you change this make sure you remove already checked gate when choosing the gateNode again
+                raise Exception("""
+                No suitable gate found for locking. Try running the script again. If the issue persists, the circuit may be too simple to support logic locking."""
+                )
+            else:
+                retries += 1
+                if gateNode in oneOutNodeList:
+                    newNodeList = set(oneOutNodeList).difference(oneOutSelectedGates)
+                else:
+                    newNodeList = set(multiOutNodeList).difference(multiOutSelectedGates)
+                if len(newNodeList) == 0:
+                    # will force the program reach the exception
+                    outNodes.append(endNode)
+                    continue 
+                gateNode = random.choice(list(newNodeList))
+                outNodes = [x for x in tempG.successors(gateNode) if tempG.nodes[x]['type'] == 'gate' or tempG.nodes[x]['type'] == 'output']
+                endNode = random.choice(outNodes)
+                
+        alreadyLocked.add(endNode)
+        
         # complicit naming as original dmux 
         # (NOTE: naming no longer complicit better to modify the other temporarily)
         # Remove the gateNode to ensure compliance
-        muxNode = endNode+'_from_mux'+gateNode
+        muxNode = endNode+'_from_mux'
         keyNode = 'keyinput' + str(c)
         
         if gateNode in oneOutNodeList:
@@ -295,7 +325,7 @@ def insertMuxNew(tempG:nx.DiGraph, infoDict: list[dict], keySize: int, dumpFiles
         
         c+=1
         fPool = set(nodeList) # Restore the fake node pool
-    
+       
     return key_list        
 
 def draw_neat_digraph(G, title=None, node_size=800):
@@ -344,5 +374,5 @@ def main(bench, kSize, dumpFiles=False, drawGraph=True):
     if drawGraph:
         draw_neat_digraph(G, "New Lock")
 
-main('b22_C', 256, dumpFiles=True, drawGraph=False)
+main('mid', 4, dumpFiles=True, drawGraph=False)
             
