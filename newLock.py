@@ -1,5 +1,8 @@
 import os, random, sys, re
 import networkx as nx
+from collections import deque
+import matplotlib.pyplot as plt
+from networkx.drawing.nx_agraph import graphviz_layout
 
 from utils import generate_key_list, reconstruct_bench, cleanInWireList
 
@@ -9,6 +12,82 @@ link_train = ''
 link_test = ''
 link_test_n = ''
 
+def gen_subgraph(G:nx.DiGraph, start_node, depth=2):
+    current_layer = {start_node}
+    targetCkt = set()
+    for l in range(depth):
+        left_layer = set()
+        for origNode in current_layer:
+            left_layer.update(G.predecessors(origNode))
+            
+            if G.nodes[origNode]['type'] != "input":
+                artNode = origNode+"_sub"
+            else:
+                artNode = origNode
+                
+            G.add_node(artNode)
+            
+            if origNode == start_node:
+                continue
+            
+            
+            for succ in list(G.successors(origNode)):
+                artSuccNode = succ + "_sub"
+                if succ in targetCkt:
+                    G.add_edge(artNode, artSuccNode)
+                # else:
+                #     G.add_edge(artNode, succ) 
+                # although this seems deceptive it actually ruins the functionality of the succ
+                # if theres a way to do this without this effect then great to implement
+                    
+        # if l < depth-1: # avoids adding extra depth to the target ckt
+        targetCkt.update(current_layer)
+        current_layer = left_layer
+        
+    # stich last artificial layer to the original ckt
+    for origNode in current_layer:
+        for succ in list(G.successors(origNode)):
+            if succ in targetCkt:
+                artSuccNode = succ + "_sub"
+                G.add_edge(origNode, artSuccNode)
+    
+    
+def get_backward_subgraph(G:nx.DiGraph, start_node, depth=4):
+    visited = set()
+    queue = deque([(start_node, 0)])
+    depth_map = {}
+    
+    while queue:
+        current_node, current_depth = queue.popleft()
+        if current_node in visited or current_depth > depth:
+            continue
+        visited.add(current_node)
+        depth_map[current_node] = current_depth
+        if current_depth < depth:
+            for pred in G.predecessors(current_node):
+                queue.append((pred, current_depth + 1))
+    
+    # Find actual max depth reached
+    max_depth = max(depth_map.values())
+    deepest_nodes = [node for node, d in depth_map.items() if d == max_depth]
+    
+    
+
+    
+    return G.subgraph(visited).copy(), deepest_nodes
+
+
+def stitch_subgraph(G:nx.DiGraph, subG:nx.DiGraph, node_list, suffix="_sub"):  
+    # Renaming rule for all nodes except the deepest nodes
+    mapping = {}
+    for node in subG.nodes():
+        if node not in node_list:
+            mapping[node] = f"{node}{suffix}"
+        
+    renamed_subG = nx.relabel_nodes(subG, mapping, copy=True)    
+    for u, v, data in renamed_subG.edges(data=True):
+        # print(data)
+        G.add_edge(u, v)
 
 def parse_ckt(bench_file_path: str, dumpFiles:bool) -> nx.DiGraph:
     tempG = nx.DiGraph()
@@ -98,41 +177,57 @@ def insertMuxNew(tempG:nx.DiGraph, infoDict: list[dict], keySize: int, dumpFiles
     print(key_list)
     oneOutSelectedGates = random.sample(oneOutNodeList, keySize//2)
     multiOutSelectedGates = random.sample(multiOutNodeList, keySize//2)
-    print(oneOutSelectedGates)
-    print(multiOutSelectedGates)
+    print("one_out",oneOutSelectedGates)
+    print("multi_out",multiOutSelectedGates)
 
     if dumpFiles:
         global link_train, link_test, link_test_n
-    
+    """
+    try find a way to avoid locking edges that point to the same endNode
+    currently using slightly different mux naming 
+    """
     c = 0
     nodeList = oneOutNodeList + multiOutNodeList
     selected_gates = oneOutSelectedGates + multiOutSelectedGates
     fPool = set(nodeList)
     for gateNode in selected_gates:
+        # print(gateNode)
         # All nodes next to gateNode except locking muxes (they appear when the gateNode had been selected as false wire)
         # Avoids nested locking
-        outNodes = [x for x in tempG.successors(gateNode) if tempG.nodes[x]['type'] == 'gate']
-        
+        outNodes = [x for x in tempG.successors(gateNode) if tempG.nodes[x]['type'] == 'gate' or tempG.nodes[x]['type'] == 'output']
         endNode = random.choice(outNodes)
         
-        # Complicent naming as original dmux
-        muxNode = endNode+'_from_mux'
+        # complicit naming as original dmux 
+        # (NOTE: naming no longer complicit better to modify the other temporarily)
+        # Remove the gateNode to ensure compliance
+        muxNode = endNode+'_from_mux'+gateNode
         keyNode = 'keyinput' + str(c)
         
-        # Avoid nodes causing loops(successors) and cycles(decendants of successors)
-        badFGates = nx.descendants(tempG, endNode)
-        fPool.difference_update(badFGates)
-        # Avoid reselection
-        fPool.discard(gateNode)
-        # Avoid self-selection
-        fPool.discard(endNode)
-        
-        # Should also remove nodes that already point to the endnode here
-        # But this is left intentionally
-        
-        # Code breaks here if fPool is zero (all nodes are reachable from the node to be locked)
-        # Sampling from set depreciated apparently
-        fGate = random.choice(list(fPool))
+        if gateNode in oneOutNodeList:
+            # Avoid nodes causing loops(successors) and cycles(decendants of successors)
+            badFGates = nx.descendants(tempG, endNode)
+            fPool.difference_update(badFGates)
+            fPool.difference_update(selected_gates)
+            # Avoid reselection
+            fPool.discard(gateNode)
+            # Avoid self-selection
+            fPool.discard(endNode)
+            
+            # Should also remove nodes that already point to the endnode here
+            # But this is left intentionally
+            
+            # Code breaks here if fPool is zero (all nodes are reachable from the node to be locked)
+            # Sampling from set depreciated apparently
+            fGate = random.choice(list(fPool))
+        else:
+            suffix = '_sub' # also used in circuit reconstruction
+            # First version of newLock
+            # subG, deepest_nodes = get_backward_subgraph(tempG, gateNode)
+            # stitch_subgraph(tempG, subG, deepest_nodes, suffix)
+            # Second version
+            gen_subgraph(tempG, gateNode)
+            
+            fGate = f"{gateNode}{suffix}"
         
         tempG.remove_edge(gateNode, endNode)
         tempG.add_edge(muxNode, endNode)
@@ -162,6 +257,21 @@ def insertMuxNew(tempG:nx.DiGraph, infoDict: list[dict], keySize: int, dumpFiles
     
     return key_list        
 
+def draw_neat_digraph(G, title=None, node_size=800):
+    # pos = nx.spring_layout(G, seed=42)  # seed ensures reproducible layout
+    pos = graphviz_layout(G, prog='dot')
+    plt.figure(figsize=(8, 6))
+    
+    nx.draw_networkx_nodes(G, pos, node_size=node_size, node_color='skyblue', edgecolors='black')
+    nx.draw_networkx_edges(G, pos, arrowstyle='->', arrowsize=20, edge_color='gray')
+    nx.draw_networkx_labels(G, pos, font_size=10, font_weight='bold')
+
+    if title:
+        plt.title(title)
+
+    plt.axis('off')
+    plt.tight_layout()
+    plt.show()
 
 def main(bench, kSize, dumpFiles=False):    
     G, infoDict = parse_ckt('./Benchmarks/'+bench+'.bench', dumpFiles)
@@ -189,6 +299,7 @@ def main(bench, kSize, dumpFiles=False):
             f.write(link_test_n)
 
     reconstruct_bench(G, infoDict, kList, f"{bench}_K{kSize}", True)
+    draw_neat_digraph(G, "New Lock")
 
-main('b', 4)
+main('mid', 4)
             
