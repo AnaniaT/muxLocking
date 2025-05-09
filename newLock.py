@@ -52,6 +52,11 @@ def gen_subgraph(G:nx.DiGraph, start_node, depth=2, dumpFiles=False):
                 artNodeGate = alter_gate(G.nodes[origNode]['gate'])
                 G.add_node(artNode, type='gate', isArt=True, gate=artNodeGate)
                 
+                # Fake edges from previous mux locks are cleared, if any.
+                # Will be added back in the current locking mux - except for the stiching edges
+                prev_edges = list(G.in_edges(artNode))
+                G.remove_edges_from(prev_edges)
+                
                 if dumpFiles:
                     # avoid counting artNodes which were already setup
                     if not 'count' in G.nodes[artNode]:
@@ -88,7 +93,9 @@ def gen_subgraph(G:nx.DiGraph, start_node, depth=2, dumpFiles=False):
         for succ in list(G.successors(origNode)):
             if succ in targetCkt:
                 artSuccNode = succ + "_sub"
-                G.add_edge(origNode, artSuccNode)
+                # Stich to original only if it isnt part of a previous mux lock 
+                if G.in_degree(artSuccNode) == 0:
+                    G.add_edge(origNode, artSuccNode)
 
                 if dumpFiles:
                     # Avoids inputs, keyinputs and muxes when stiching the ckt
@@ -96,44 +103,6 @@ def gen_subgraph(G:nx.DiGraph, start_node, depth=2, dumpFiles=False):
                         link_train += f"{G.nodes[origNode]['count']} {G.nodes[artSuccNode]['count']}\n"
 
     
-    
-def get_backward_subgraph(G:nx.DiGraph, start_node, depth=4):
-    visited = set()
-    queue = deque([(start_node, 0)])
-    depth_map = {}
-    
-    while queue:
-        current_node, current_depth = queue.popleft()
-        if current_node in visited or current_depth > depth:
-            continue
-        visited.add(current_node)
-        depth_map[current_node] = current_depth
-        if current_depth < depth:
-            for pred in G.predecessors(current_node):
-                queue.append((pred, current_depth + 1))
-    
-    # Find actual max depth reached
-    max_depth = max(depth_map.values())
-    deepest_nodes = [node for node, d in depth_map.items() if d == max_depth]
-    
-    
-
-    
-    return G.subgraph(visited).copy(), deepest_nodes
-
-
-def stitch_subgraph(G:nx.DiGraph, subG:nx.DiGraph, node_list, suffix="_sub"):  
-    # Renaming rule for all nodes except the deepest nodes
-    mapping = {}
-    for node in subG.nodes():
-        if node not in node_list:
-            mapping[node] = f"{node}{suffix}"
-        
-    renamed_subG = nx.relabel_nodes(subG, mapping, copy=True)    
-    for u, v, data in renamed_subG.edges(data=True):
-        # print(data)
-        G.add_edge(u, v)
-
 def parse_ckt(bench_file_path: str, dumpFiles:bool) -> nx.DiGraph:
     tempG = nx.DiGraph()
     # Assuming one declaration per line
@@ -374,5 +343,15 @@ def main(bench, kSize, dumpFiles=False, drawGraph=True):
     if drawGraph:
         draw_neat_digraph(G, "New Lock")
 
-main('mid', 4, dumpFiles=True, drawGraph=False)
-            
+# main('mid', 4, dumpFiles=True, drawGraph=False)
+for f in os.listdir('./Benchmarks'):
+    if os.path.isfile('./Benchmarks/'+f):
+        if f != 'b.bench' and f != 'mid.bench':
+            if f.startswith('b'):
+                for k in [256, 512]:
+                    main(f.split('.')[0], k, True)
+            else:
+                for k in [64, 128, 256]:
+                    if f.startswith('c13') and k == 256:
+                        continue
+                    main(f.split('.')[0], k)
