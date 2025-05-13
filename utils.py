@@ -116,8 +116,9 @@ def reconstruct_bench(tempG: nx.DiGraph, infoDict: dict, keyList:list, outBenchN
             if tempG.out_degree(node) == 0:
                 outputs += f"OUTPUT({node})\n"
             
-            gateName = gateDict[node]
-            if gateName.lower() == "mux":
+            # gateName = gateDict[node]
+            gateName = tempG.nodes[node]['gate'].upper()
+            if gateName == "MUX":
                 mux = muxDict[node]
                 inWiresStr = f"{mux['key']}, {mux[0]}, {mux[1]}"
             else:

@@ -36,7 +36,7 @@ def alter_gate(gate:str):
     }
     return gatePair[gate.upper()]
 
-def gen_subgraph(G:nx.DiGraph, start_node, depth=2, dumpFiles=False):
+def gen_subgraph(G:nx.DiGraph, start_node, nodeTag, depth=2, dumpFiles=False):
     if dumpFiles:
         global feat, cell, count, ML_count, link_train
         
@@ -48,14 +48,14 @@ def gen_subgraph(G:nx.DiGraph, start_node, depth=2, dumpFiles=False):
             left_layer.update(G.predecessors(origNode))
             
             if G.nodes[origNode]['type'] != "input":
-                artNode = origNode+"_sub"
+                artNode = origNode+nodeTag
                 artNodeGate = alter_gate(G.nodes[origNode]['gate'])
                 G.add_node(artNode, type='gate', isArt=True, gate=artNodeGate)
                 
                 # Fake edges from previous mux locks are cleared, if any.
                 # Will be added back in the current locking mux - except for the stiching edges
-                prev_edges = list(G.in_edges(artNode))
-                G.remove_edges_from(prev_edges)
+                # prev_edges = list(G.in_edges(artNode))
+                # G.remove_edges_from(prev_edges)
                 
                 if dumpFiles:
                     # avoid counting artNodes which were already setup
@@ -73,7 +73,7 @@ def gen_subgraph(G:nx.DiGraph, start_node, depth=2, dumpFiles=False):
             
             
             for succ in list(G.successors(origNode)):
-                artSuccNode = succ + "_sub"
+                artSuccNode = succ + nodeTag
                 if succ in targetCkt:
                     G.add_edge(artNode, artSuccNode)
                     
@@ -92,10 +92,10 @@ def gen_subgraph(G:nx.DiGraph, start_node, depth=2, dumpFiles=False):
     for origNode in current_layer:
         for succ in list(G.successors(origNode)):
             if succ in targetCkt:
-                artSuccNode = succ + "_sub"
+                artSuccNode = succ + nodeTag
                 # Stich to original only if it isnt part of a previous mux lock 
-                if G.in_degree(artSuccNode) == 0:
-                    G.add_edge(origNode, artSuccNode)
+                # if G.in_degree(artSuccNode) == 0:
+                G.add_edge(origNode, artSuccNode)
 
                 if dumpFiles:
                     # Avoids inputs, keyinputs and muxes when stiching the ckt
@@ -258,12 +258,8 @@ def insertMuxNew(tempG:nx.DiGraph, infoDict: list[dict], keySize: int, dumpFiles
             # Sampling from set depreciated apparently
             fGate = random.choice(list(fPool))
         else:
-            suffix = '_sub' # also used in circuit reconstruction
-            # First version of newLock
-            # subG, deepest_nodes = get_backward_subgraph(tempG, gateNode)
-            # stitch_subgraph(tempG, subG, deepest_nodes, suffix)
-            # Second version
-            gen_subgraph(tempG, gateNode, depth=2, dumpFiles=dumpFiles)
+            suffix = '_sub_'+endNode
+            gen_subgraph(tempG, gateNode, suffix, depth=2, dumpFiles=dumpFiles)
             
             fGate = f"{gateNode}{suffix}"
         
