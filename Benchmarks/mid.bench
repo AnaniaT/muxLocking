@@ -1,0 +1,29 @@
+INPUT(a)
+INPUT(b)
+INPUT(c)
+INPUT(d)
+INPUT(e)
+
+g1 = AND(a, b)
+g2 = OR(c, d)
+g3 = NAND(d, e)
+g4 = XOR(b, e)
+
+g5 = AND(g1, g2)
+g6 = NOR(g3, g4)
+g7 = NAND(g2, g3)
+g8 = XOR(g1, g4)
+g9 = AND(a, g4)
+
+g10 = OR(g5, g6)
+g11 = AND(g7, g8)
+g12 = NAND(g6, g9)
+
+g13 = XOR(g10, g11)
+g14 = NOR(g11, g12)
+g15 = AND(g10, g12)
+
+
+OUTPUT(g13)
+OUTPUT(g14)
+OUTPUT(g15)
