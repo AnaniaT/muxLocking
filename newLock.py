@@ -36,37 +36,62 @@ def alter_gate(gate:str):
     }
     return gatePair[gate.upper()]
 
-def gen_subgraph(G:nx.DiGraph, start_node, nodeTag, depth=2, dumpFiles=False):
+def gen_subgraph(G:nx.DiGraph, start_node, nodeTag, dumpFiles=False, altGates=True):
     if dumpFiles:
         global feat, cell, count, ML_count, link_train
         
     current_layer = {start_node}
     targetCkt = set()
-    for l in range(depth):
+    while len(current_layer) > 0:
+        print(current_layer)
         left_layer = set()
         for origNode in current_layer:
             left_layer.update(G.predecessors(origNode))
             
-            if G.nodes[origNode]['type'] != "input":
+            # if G.nodes[origNode]['type'] != "input":
+            if "isKey" in G.nodes[origNode]:
+                # Prevent postprocessing from picking this as real keyinput
+                artNode = origNode.replace("keyinput", f"key_input")+nodeTag
+            else:                
                 artNode = origNode+nodeTag
-                artNodeGate = alter_gate(G.nodes[origNode]['gate'])
-                G.add_node(artNode, type='gate', isArt=True, gate=artNodeGate)
-                
-                # Fake edges from previous mux locks are cleared, if any.
-                # Will be added back in the current locking mux - except for the stiching edges
-                # prev_edges = list(G.in_edges(artNode))
-                # G.remove_edges_from(prev_edges)
-                
-                if dumpFiles:
-                    # avoid counting artNodes which were already setup
-                    if not 'count' in G.nodes[artNode]:
-                        G.nodes[artNode]['count'] = ML_count    
-                        feat += f"{' '.join([str(x) for x in gateVecDict[artNodeGate.lower()]])}\n"
-                        cell += f"{ML_count} assign for output {artNode}\n"
-                        count += f"{ML_count}\n"
-                        ML_count+=1
+            
+            if G.nodes[origNode]['type'] == "input":
+                G.add_node(artNode, type='input', isArt=True)
             else:
-                artNode = origNode
+                if altGates:
+                    artNodeGate = alter_gate(G.nodes[origNode]['gate'])
+                else:
+                    artNodeGate = G.nodes[origNode]['gate']     
+                
+                if artNodeGate.upper() == "MUX":               
+                    G.add_node(artNode, type='mux', isArt=True, gate=artNodeGate)
+                    mDict = {}
+                    for k,v in G.nodes[origNode]['muxDict'].items():
+                        if k == "key":
+                            mDict["key"] = v.replace("keyinput", f"key_input")+nodeTag
+                        else:
+                            mDict[k] = v+nodeTag
+                            
+                    G.nodes[artNode]['muxDict'] = mDict
+                        
+                else:
+                    G.add_node(artNode, type='gate', isArt=True, gate=artNodeGate)
+            
+            # Fake edges from previous mux locks are cleared, if any.
+            # Will be added back in the current locking mux - except for the stiching edges
+            # prev_edges = list(G.in_edges(artNode))
+            # G.remove_edges_from(prev_edges)
+            
+            if dumpFiles and G.nodes[artNode]['type'] != "input":
+                # avoid counting artNodes which were already setup
+                if not 'count' in G.nodes[artNode] and artNodeGate.lower() != "mux":
+                    G.nodes[artNode]['count'] = ML_count    
+                    feat += f"{' '.join([str(x) for x in gateVecDict[artNodeGate.lower()]])}\n"
+                    cell += f"{ML_count} assign for output {artNode}\n"
+                    count += f"{ML_count}\n"
+                    ML_count+=1
+            # else:
+            #     artNode = origNode
                             
             if origNode == start_node:
                 continue
@@ -77,8 +102,9 @@ def gen_subgraph(G:nx.DiGraph, start_node, nodeTag, depth=2, dumpFiles=False):
                 if succ in targetCkt:
                     G.add_edge(artNode, artSuccNode)
                     
-                    if dumpFiles and G.nodes[origNode]['type'] != "input":
-                        link_train += f"{G.nodes[artNode]['count']} {G.nodes[artSuccNode]['count']}\n"
+                    if dumpFiles:
+                        if 'count' in G.nodes[artNode].keys() and 'count' in G.nodes[artSuccNode].keys():
+                            link_train += f"{G.nodes[artNode]['count']} {G.nodes[artSuccNode]['count']}\n"
                 # else:
                 #     G.add_edge(artNode, succ) 
                 # although this seems deceptive it actually ruins the functionality of the succ
@@ -87,20 +113,6 @@ def gen_subgraph(G:nx.DiGraph, start_node, nodeTag, depth=2, dumpFiles=False):
         # if l < depth-1: # avoids adding extra depth to the target ckt
         targetCkt.update(current_layer)
         current_layer = left_layer
-        
-    # stich last artificial layer to the original ckt
-    for origNode in current_layer:
-        for succ in list(G.successors(origNode)):
-            if succ in targetCkt:
-                artSuccNode = succ + nodeTag
-                # Stich to original only if it isnt part of a previous mux lock 
-                # if G.in_degree(artSuccNode) == 0:
-                G.add_edge(origNode, artSuccNode)
-
-                if dumpFiles:
-                    # Avoids inputs, keyinputs and muxes when stiching the ckt
-                    if 'count' in G.nodes[origNode]:
-                        link_train += f"{G.nodes[origNode]['count']} {G.nodes[artSuccNode]['count']}\n"
 
     
 def parse_ckt(bench_file_path: str, dumpFiles:bool) -> nx.DiGraph:
@@ -138,11 +150,12 @@ def parse_ckt(bench_file_path: str, dumpFiles:bool) -> nx.DiGraph:
                 elif isLogicOp:
                     outWire, gate, inWires = isLogicOp.groups()
                     
-                    gateDict[outWire] = gate
+                    # gateDict[outWire] = gate
                     # Store more mux info (ONLY SUPPORTS 2 TO 1 MUX)
                     if gate.lower() == "mux":
                         k, i0, i1 = cleanInWireList(inWires)
-                        muxDict[outWire] = {"key": k, 0:i0, 1:i1 }
+                        # muxDict[outWire] = {"key": k, 0:i0, 1:i1 }
+                        tempG.nodes[outWire]['muxDict'] = {"key": k, 0:i0, 1:i1 }
                     
                     for inwire in cleanInWireList(inWires):
                         tempG.add_edge(inwire, outWire)
@@ -179,9 +192,11 @@ def insertMuxNew(tempG:nx.DiGraph, infoDict: list[dict], keySize: int, dumpFiles
     # Selection pool must exclude input n outputs since we lock the outedges
     oneOutNodeList = [x for x in tempG.nodes if tempG.out_degree(x) == 1 and tempG.nodes[x]['type'] == 'gate']
     multiOutNodeList = [x for x in tempG.nodes if tempG.out_degree(x) > 1 and tempG.nodes[x]['type'] == 'gate']
-    gateDict, muxDict = infoDict
+    # gateDict, muxDict = infoDict
     
     key_list = generate_key_list(keySize)
+    altGateList = list(key_list)
+    random.shuffle(altGateList)
     print(key_list)
     oneOutSelectedGates = random.sample(oneOutNodeList, keySize//2)
     multiOutSelectedGates = random.sample(multiOutNodeList, keySize//2)
@@ -212,6 +227,7 @@ def insertMuxNew(tempG:nx.DiGraph, infoDict: list[dict], keySize: int, dumpFiles
         # A temporary fix for the common-endNode problem
         retries = 0
         while endNode in alreadyLocked:
+            print('a')
             outNodes.remove(endNode)
             if len(outNodes) > 0:
                 endNode = random.choice(outNodes)
@@ -229,12 +245,14 @@ def insertMuxNew(tempG:nx.DiGraph, infoDict: list[dict], keySize: int, dumpFiles
                     # will force the program reach the exception
                     outNodes.append(endNode)
                     continue 
+                print(f"Gate [{gateNode}] swapped by gate ", end="")
                 gateNode = random.choice(list(newNodeList))
+                print(f"[{gateNode}]")
                 outNodes = [x for x in tempG.successors(gateNode) if tempG.nodes[x]['type'] == 'gate' or tempG.nodes[x]['type'] == 'output']
                 endNode = random.choice(outNodes)
                 
         alreadyLocked.add(endNode)
-        
+        print('b')
         # complicit naming as original dmux 
         # (NOTE: naming no longer complicit better to modify the other temporarily)
         # Remove the gateNode to ensure compliance
@@ -258,8 +276,10 @@ def insertMuxNew(tempG:nx.DiGraph, infoDict: list[dict], keySize: int, dumpFiles
             # Sampling from set depreciated apparently
             fGate = random.choice(list(fPool))
         else:
-            suffix = '_sub_'+endNode
-            gen_subgraph(tempG, gateNode, suffix, depth=2, dumpFiles=dumpFiles)
+            suffix = '_sub_'+endNode # alter gates randomly half of the time  
+            print('c')
+            gen_subgraph(tempG, gateNode, suffix, dumpFiles=dumpFiles, altGates=bool(altGateList[c]))
+            print('d')
             
             fGate = f"{gateNode}{suffix}"
         
@@ -285,8 +305,9 @@ def insertMuxNew(tempG:nx.DiGraph, infoDict: list[dict], keySize: int, dumpFiles
         else:
             input0 = fGate
             input1 = gateNode
-        muxDict[muxNode] = {"key": keyNode, 0: input0 , 1: input1}
-        gateDict[muxNode] = "MUX"
+        # muxDict[muxNode] = {"key": keyNode, 0: input0 , 1: input1}
+        # gateDict[muxNode] = "MUX"
+        tempG.nodes[muxNode]['muxDict'] = {"key": keyNode, 0: input0 , 1: input1}
         
         c+=1
         fPool = set(nodeList) # Restore the fake node pool
@@ -309,7 +330,7 @@ def draw_neat_digraph(G, title=None, node_size=800):
     plt.tight_layout()
     plt.show()
 
-def main(bench, kSize, dumpFiles=False, drawGraph=True):    
+def main(bench, kSize, dumpFiles=False, drawGraph=False):    
     G, infoDict = parse_ckt('./Benchmarks/'+bench+'.bench', dumpFiles)
     kList = insertMuxNew(G, infoDict, kSize, dumpFiles)
 
@@ -340,14 +361,69 @@ def main(bench, kSize, dumpFiles=False, drawGraph=True):
         draw_neat_digraph(G, "New Lock")
 
 # main('mid', 4, dumpFiles=True, drawGraph=False)
+d = [('b14_C', 256), ('c1355', 64)]
+r = []
 for f in os.listdir('./Benchmarks'):
     if os.path.isfile('./Benchmarks/'+f):
         if f != 'b.bench' and f != 'mid.bench':
             if f.startswith('b'):
+                # continue
                 for k in [256, 512]:
+                    sk = False
+                    for ff,kk in d:
+                        if f.startswith(ff) and k == kk:
+                            print("Skipping", f, k)
+                            sk = True
+                            break
+                    if sk:
+                        continue
                     main(f.split('.')[0], k, True)
+                    # try:
+                    #     main(f.split('.')[0], k, True)
+                    # except Exception as e:
+                    #     print("Error: ", f, k)
+                    #     print(e)
+                    #     r.append([f.split('.')[0], k])
             else:
                 for k in [64, 128, 256]:
+                    sk = False
+                    for ff,kk in d:
+                        if f.startswith(ff) and k == kk:
+                            print("Skipping", f, k)
+                            sk = True
+                            break
+                    if sk:
+                        continue
+                    
                     if f.startswith('c13') and k == 256:
                         continue
-                    main(f.split('.')[0], k)
+                    main(f.split('.')[0], k, True)
+                    # try:
+                    #     main(f.split('.')[0], k, True)
+                    # except Exception as e:
+                    #     print("Error: ", f, k)
+                    #     print(e)
+                    #     r.append([f.split('.')[0], k])
+print("Done...", r)
+# try:
+# main('mid', 4, False, True)
+# except Exception as e:
+#     print(e)
+
+# while len(r) > 0:
+#     a = []
+#     for i in r:
+#         noErr = True
+#         try:
+#             main(i[0], i[1], True)
+#         except Exception as e:
+#             print(e)
+#             print(i)
+#             noErr = False
+        
+#         if noErr:
+#             a.append(i)
+            
+#     for x in a:
+#         r.remove(x)
+    
