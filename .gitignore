@@ -7,3 +7,6 @@ lala/
 data/ 
 dataV1/ 
 DepthDatas/
+data-*/
+result/
+subgraphs*/

@@ -1,10 +1,13 @@
-import os, random, sys, re
+import os, random, sys, re, copy
 import networkx as nx
-from collections import deque
+from networkx.algorithms import isomorphism
+from itertools import combinations
+from collections import defaultdict
 import matplotlib.pyplot as plt
 from networkx.drawing.nx_pydot import graphviz_layout
 
 from utils import generate_key_list, reconstruct_bench, cleanInWireList
+from tools import *
 
 feat, cell, count = '', '', ''
 ML_count = 0 
@@ -37,31 +40,39 @@ def alter_gate(gate:str):
     return gatePair[gate.upper()]
 def gen_subgraphUpdated(
     G: nx.DiGraph,
-    start_node, nodeTag, dumpFiles=False, altGates=True
+    start_node, end_node, dumpFiles=False, altGates=True
 ) -> nx.DiGraph:
     if dumpFiles:
         global feat, cell, count, ML_count, link_train
+    nodeTag = '_sub_'+end_node
+    anchor_nodes, nodes_to_copy = find_anchor_nodes(G, start_node, end_node, 3)
     # Step 1: Get all nodes reachable from start_node
-    nodes_to_copy = nx.ancestors(G, start_node)
+    # nodes_to_copy = nx.ancestors(G, start_node)
     nodes_to_copy.add(start_node)
 
     # Step 2: Create a mapping of old -> new node IDs
     mapping = {}
     for n in nodes_to_copy:
-        if "isKey" in G.nodes[n]:
-            # Prevent postprocessing from picking this as real keyinput
-            mapping[n] = n.replace("keyinput", "key_input")+nodeTag
-        else:                
-            mapping[n] = n+nodeTag 
+        if n in anchor_nodes:
+            mapping[n] = n  # shared node
+        else:
+            if "isKey" in G.nodes[n]:
+                # Prevent postprocessing from picking this as real keyinput
+                mapping[n] = n.replace("keyinput", "key_input")+nodeTag
+            else:                
+                mapping[n] = n+nodeTag 
 
     # Step 3: Create the subgraph copy
-    subG = G.subgraph(nodes_to_copy).copy()
+    subGo = G.subgraph(nodes_to_copy).copy()
 
     # Step 4: Relabel nodes
-    subG = nx.relabel_nodes(subG, mapping)
+    subG = nx.relabel_nodes(subGo, mapping)
 
     # Step 5: Edit node attributes
     for node in subG.nodes:
+        if node in anchor_nodes:
+            continue
+        
         if subG.nodes[node]['type'] == "input":
             # G.add_node(artNode, type='input', isArt=True)
             subG.nodes[node].clear()
@@ -107,6 +118,18 @@ def gen_subgraphUpdated(
     # Step 7: Merge the subgraph into the original graph G
     G.add_nodes_from(subG.nodes(data=True))
     G.add_edges_from(subG.edges(data=True))
+
+    # Stitch subgraph
+    for n in subGo.nodes:
+        if n in anchor_nodes:
+            continue
+        for pred in G.predecessors(n):
+            if pred not in subGo.nodes:
+                fake_n = mapping[n]
+                G.add_edge(pred, fake_n)
+                if 'count' in G.nodes[pred].keys() and 'count' in G.nodes[fake_n].keys():
+                    link_train += f"{G.nodes[pred]['count']} {G.nodes[fake_n]['count']}\n"
+
 
 def gen_subgraph(G:nx.DiGraph, start_node, nodeTag, dumpFiles=False, altGates=True):
     if dumpFiles:
@@ -336,13 +359,13 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool):
             # Sampling from set depreciated apparently i.e used list()
             fGate = random.choice(list(fPool))
         else:
-            suffix = '_sub_'+v 
+            # suffix = '_sub_'+v 
             print('c')
             # alter gates randomly half of the time  
-            gen_subgraphUpdated(tempG, u, suffix, dumpFiles=dumpFiles, altGates=bool(altGateList[c]))
+            gen_subgraphUpdated(tempG, u, v, dumpFiles=dumpFiles)
             print('d')
             
-            fGate = f"{u}{suffix}"
+            fGate = f"{u}_sub_{v}"
         
         tempG.remove_edge(u, v)
         tempG.add_edge(muxNode, v)
@@ -501,23 +524,6 @@ def insertMuxNew(tempG:nx.DiGraph, infoDict: list[dict], keySize: int, dumpFiles
        
     return key_list        
 
-def draw_neat_digraph(G, title=None, node_size=800):
-    # pos = nx.spring_layout(G, seed=42)  # seed ensures reproducible layout
-    pos = graphviz_layout(G, prog='dot')
-    plt.figure(figsize=(8, 6))
-    
-    nx.draw_networkx_nodes(G, pos, node_size=node_size, node_color='skyblue', edgecolors='black')
-    nx.draw_networkx_edges(G, pos, arrowstyle='->', arrowsize=20, edge_color='gray')
-    nx.draw_networkx_labels(G, pos, font_size=10, font_weight='bold')
-
-    if title:
-        plt.title(title)
-
-    plt.axis('off')
-    plt.tight_layout()
-    # plt.show()
-    plt.savefig("te.png", format='png', dpi=300)
-    plt.close()
 
 def main(bench, kSize, dumpFiles=False, drawGraph=False):    
     global feat, cell, count, ML_count, link_train, link_test, link_test_n
@@ -557,72 +563,54 @@ def main(bench, kSize, dumpFiles=False, drawGraph=False):
     if drawGraph:
         draw_neat_digraph(G, "New Lock")
 
-# main('mid', 4, dumpFiles=True, drawGraph=True)
-g, _ = parse_ckt('./data/mid_K4_DMUX/mid_K4.bench', False)
-draw_neat_digraph(g, "midK4")
-# d = [('c1355', 64)]
-# r = []
-# for f in os.listdir('./Benchmarks'):
-#     if os.path.isfile('./Benchmarks/'+f):
-#         if f != 'b.bench' and f != 'mid.bench':
-#             if f.startswith('b'):
-#                 continue
-#                 for k in [256, 512]:
-#                     sk = False
-#                     for ff,kk in d:
-#                         if f.startswith(ff) and k == kk:
-#                             print("Skipping", f, k)
-#                             sk = True
-#                             break
-#                     if sk:
-#                         continue
-#                     main(f.split('.')[0], k, True)
-#                     # try:
-#                     #     main(f.split('.')[0], k, True)
-#                     # except Exception as e:
-#                     #     print("Error: ", f, k)
-#                     #     print(e)
-#                     #     r.append([f.split('.')[0], k])
-#             else:
-#                 for k in [64, 128, 256]:
-#                     sk = False
-#                     for ff,kk in d:
-#                         if f.startswith(ff) and k == kk:
-#                             print("Skipping", f, k)
-#                             sk = True
-#                             break
-#                     if sk:
-#                         continue
-                    
-#                     if f.startswith('c13') and k == 256:
-#                         continue
-#                     main(f.split('.')[0], k, True)
-#                     # try:
-#                     #     main(f.split('.')[0], k, True)
-#                     # except Exception as e:
-#                     #     print("Error: ", f, k)
-#                     #     print(e)
-#                     #     r.append([f.split('.')[0], k])
-# print("Done...", r)
-# try:
-# main('mid', 4, False, True)
-# except Exception as e:
-#     print(e)
+def find_anchor_nodes(G: nx.DiGraph, u, v, h):
+    G = copy.deepcopy(G)
+    G.remove_edge(u, v)
+    # Step 1: Collect h-hop cones
+    fanin_u = set(nx.ego_graph(G.reverse(), u, radius=h, undirected=False).reverse().nodes)
+    fanout_u = set(nx.ego_graph(G, u, radius=h, undirected=False).nodes)
+    fanin_v = set(nx.ego_graph(G.reverse(), v, radius=h, undirected=False).reverse().nodes)
+    fanout_v = set(nx.ego_graph(G, v, radius=h, undirected=False).nodes)
 
-# while len(r) > 0:
-#     a = []
-#     for i in r:
-#         noErr = True
-#         try:
-#             main(i[0], i[1], True)
-#         except Exception as e:
-#             print(e)
-#             print(i)
-#             noErr = False
-        
-#         if noErr:
-#             a.append(i)
-            
-#     for x in a:
-#         r.remove(x)
+    # Step 2: Build subgraph
+    region_nodes = fanin_u | fanout_u | fanin_v | fanout_v | {u, v}
+    nodes_to_copy = (fanin_u | fanout_u | {u}) # - (fanin_v | v | fanout_v)
+    G_sub = G.subgraph(region_nodes).copy()
+
+    # Step 3: Remove u and fanout(u), except those that are shared with fanout(v)
+    shared_nodes = fanout_u & (fanout_v | fanin_v | {v})
+    forbidden_nodes = {u} | (fanout_u - shared_nodes)
+    G_sub.remove_nodes_from(forbidden_nodes)
+
+    # Step 4: Identify frontier targets in fanout(v)
+    frontier_targets = {
+        t for t in fanout_v
+        if not any(succ in fanout_v for succ in G_sub.successors(t))
+    }
+
+    # Step 5: Compute anchors via ancestors of frontier targets
+    anchor_nodes = set()
+    for t in frontier_targets:
+        ancestors = nx.ancestors(G_sub, t)
+        anchor_nodes.update(ancestors & fanin_u)
+    
+    if len(anchor_nodes) > 0:
+        print(f"Anchors for {u} -> {v}: ", end="")
+        for i in anchor_nodes:
+            print(f"{i}, ", end="")
+        print()
+
+    return anchor_nodes, nodes_to_copy
+
+
+# main('mid', 2, dumpFiles=False, drawGraph=True)
+# main('c1355', 2, dumpFiles=True, drawGraph=False)
+# main('c1355', 4, dumpFiles=True, drawGraph=False)
+# main('c1355', 6, dumpFiles=True, drawGraph=False)
+# main('c1355', 12, dumpFiles=True, drawGraph=False)
+# g, _ = parse_ckt('./data/mid_K4_DMUX/mid_K4.bench', False)
+# draw_neat_digraph(g, "midK4")
+
+
+print('Done running main.py')
     
