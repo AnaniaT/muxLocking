@@ -1,4 +1,4 @@
-import os, random, sys, re, copy
+import os, random, sys, re
 import networkx as nx
 from networkx.algorithms import isomorphism
 from itertools import combinations
