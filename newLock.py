@@ -201,7 +201,7 @@ def parse_ckt(bench_file_path: str, dumpFiles:bool) -> nx.DiGraph:
     return tempG, (gateDict, muxDict) #infoDict
 
 
-def selectTargetEdges(tempG:nx.DiGraph, allEligibleEdges, keySize: int):
+def selectTargetEdges(tempG:nx.DiGraph, allEligibleEdges, keySize: int, hop=4):
     k = keySize // 2
     # Start nodes must exclude input n outputs since we lock the outedges
     # End nodes should except locking muxes (they appear when the gateNode had been selected as false wire)
@@ -223,6 +223,19 @@ def selectTargetEdges(tempG:nx.DiGraph, allEligibleEdges, keySize: int):
             break
         
         if u not in used_starts and v not in used_ends:
+            tempG.remove_edge(u, v)
+            # Compute h-hop fanout of u
+            fanout_u = set(nx.ego_graph(tempG, u, radius=hop, undirected=False).nodes)
+
+            # Compute h-hop fanin and fanout of v
+            fanin_v = set(nx.ego_graph(tempG.reverse(), v, radius=hop, undirected=False).nodes)
+            fanout_v = set(nx.ego_graph(tempG, v, radius=hop, undirected=False).nodes)
+
+            tempG.add_edge(u, v)
+            # Ensure no overlap between fanout of u and (v, fanin_v, fanout_v)
+            if v in fanout_u or fanout_u & fanin_v or fanout_u & fanout_v:
+                continue
+            
             if tempG.out_degree(u) == 1 and len(unique_1Edges) < k:
                 unique_1Edges.append((u,v))
                 used_starts.add(u)
@@ -407,13 +420,13 @@ def find_anchor_nodes(G: nx.DiGraph, u, v, h):
 
 
 # main('mid', 2, dumpFiles=False, drawGraph=True)
-# main('c1355', 2, dumpFiles=True, drawGraph=False)
-# main('c1355', 4, dumpFiles=True, drawGraph=False)
-# main('c1355', 6, dumpFiles=True, drawGraph=False)
-# main('c1355', 12, dumpFiles=True, drawGraph=False)
+main('c1355', 2, dumpFiles=True, drawGraph=False)
+main('c1355', 4, dumpFiles=True, drawGraph=False)
+main('c1355', 6, dumpFiles=True, drawGraph=False)
+main('c1355', 12, dumpFiles=True, drawGraph=False)
 # g, _ = parse_ckt('./data/mid_K4_DMUX/mid_K4.bench', False)
 # draw_neat_digraph(g, "midK4")
 
 
-print('Done running main.py')
+print('Done running newLock.py')
     
