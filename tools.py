@@ -1,4 +1,4 @@
-import os, random, sys, re
+import os, sys, re
 import networkx as nx
 from networkx.algorithms import isomorphism
 from itertools import combinations
@@ -6,7 +6,11 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 from networkx.drawing.nx_pydot import graphviz_layout
 
-from utils import generate_key_list, reconstruct_bench, cleanInWireList
+def cleanInWireList(inWiresStr: str):
+    inWiresStr.strip()
+    if inWiresStr[-1] == ",":
+        inWiresStr = inWiresStr[:-1]
+    return [x.strip() for x in inWiresStr.split(',')]
 
 # Misc
 def parse_bench(bench_file_path: str) -> nx.DiGraph:
@@ -162,25 +166,7 @@ def subgView(G: nx.DiGraph, node, node2, hop):
     hood2 = nx.ego_graph(
         G, node2, radius=hop, undirected=True
     ).nodes
-    # fanin_nodes = nx.ego_graph(
-    #     G.reverse(), node, radius=hop, undirected=False
-    # ).reverse().nodes
-    
-    # # Get 4-hop fanout (successors)
-    # fanout_nodes = nx.ego_graph(
-    #     G, node, radius=hop, undirected=False
-    # ).nodes
-    # fanin_nodes2 = nx.ego_graph(
-    #     G.reverse(), node2, radius=hop, undirected=False
-    # ).reverse().nodes
-    
-    # # Get 4-hop fanout (successors)
-    # fanout_nodes2 = nx.ego_graph(
-    #     G, node2, radius=hop, undirected=False
-    # ).nodes
 
-    # Union of both directions
-    # neighborhood_nodes = set(fanin_nodes) | set(fanout_nodes) |set(fanin_nodes2) | set(fanout_nodes2)
     neighborhood_nodes = set(hood) | set(hood2)
     
     # Extract subgraph
@@ -189,36 +175,24 @@ def subgView(G: nx.DiGraph, node, node2, hop):
     
     
 if __name__ == "__main__":    
-    # g, _ = parse_ckt('./data/mid_K4_DMUX/mid_K4.bench', False)
-    # draw_neat_digraph(g, "midK4")
-
-    # main('apex2c', 6, dumpFiles=True, drawGraph=False)
-    # extractSubG('./data/c1355_K6_DMUX/c1355_K6.bench', "subgraphs-c1355k6")
-    # g = parse_bench('./data/c1355_K6_DMUX-1/c1355_K6.bench')
-    # center_node = 'G1261gat_from_mux'
-    # subG = get_radius_subgraph(g, center_node, radius=3)
-    # a = nx.read_adjlist('./data/c1355_K12_DMUX/graph-293-347.adjlist')
-    # b = nx.read_adjlist('./data/c1355_K6_DMUX-3/graph-350-371.adjlist')
-    # path = nx.shortest_path(a, source='0', target='1')
-    # print("Path from A to D:", path)
-    # pathb = nx.shortest_path(b, source='0', target='1')
-    # print("Path from A to D:", pathb)
-    # draw_neat_digraph(a)
-    # draw_neat_digraph(b)
-    # adjlist2png('./data/c1355_K4_DMUX-3')
-    # adjlist2png('./data/c1355_K12_DMUX')
+    # View into the bench file 
+    g = parse_bench('./data/c1355_K4_DMUX/c1355_K4.bench')
+    g = g.to_undirected()
+    path = list(nx.all_simple_paths(g, source='G886gat', target='G952gat', cutoff=7))
+    print("True Path: \nlength: ", len(path))
+    print(path)
+    path2 = list(nx.all_simple_paths(g, source='G886gat_sub_G952gat', target='G952gat', cutoff=7))
+    print("False Path: \nlength: ", len(path2))
+    print(path2)
     
-    # main('apex2c', 6, dumpFiles=True, drawGraph=False)
-    # center_node = 'G1261gat_from_mux'
-    # subG = get_radius_subgraph(g, center_node, radius=3)
-    # a = nx.read_adjlist('./data/c1355_K12_DMUX/graph-293-347.adjlist')
-    # b = nx.read_adjlist('./data/c1355_K6_DMUX-3/graph-350-371.adjlist')
-    # path = nx.shortest_path(a, source='0', target='1')
-    # print("Path from A to D:", path)
-    # pathb = nx.shortest_path(b, source='0', target='1')
-    # print("Path from A to D:", pathb)
-    # draw_neat_digraph(a)
-    # draw_neat_digraph(b)
-    # adjlist2png('./data/c1355_K4_DMUX-3')
-    # adjlist2png('./data/c1355_K12_DMUX')
+    # Veiw into the adjlist files from MuxLink
+    a = nx.read_adjlist('./data/c1355_K4_DMUX/graph-610-310.adjlist')
+    b = nx.read_adjlist('./data/c1355_K4_DMUX/graph-292-310.adjlist')
+    patha = list(nx.all_simple_paths(a, source='0', target='1', cutoff=7))
+    print("Path a: length: ", len(patha))
+    print(patha)
+    pathb = list(nx.all_simple_paths(b, source='0', target='1', cutoff=7))
+    print("Path b: length: ", len(pathb))
+    print(pathb)
+    
     print("Done running tools.py")
