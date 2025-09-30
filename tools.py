@@ -258,6 +258,9 @@ def gen_modelFiles(bench_file_path: str) -> nx.DiGraph:
     line = line.split('=')[1]
     keyList = [int(ch) for ch in line]
     
+    tmp_link_test = [0]*len(keyList)
+    tmp_link_test_n = [0]*len(keyList)
+    
     for n in tempG.nodes:
         if tempG.nodes[n]["type"] == "output" or tempG.nodes[n]["type"] == "gate":
             if tempG.nodes[n]["gate"].lower() == "mux":
@@ -269,8 +272,13 @@ def gen_modelFiles(bench_file_path: str) -> nx.DiGraph:
                 
                 outGate = n.replace("_from_mux", "")
                 
-                link_test += f"{tempG.nodes[truGate]['count']} {tempG.nodes[outGate]['count']}\n"
-                link_test_n += f"{tempG.nodes[falGate]['count']} {tempG.nodes[outGate]['count']}\n"
+                tmp_link_test[idx] = f"{tempG.nodes[truGate]['count']} {tempG.nodes[outGate]['count']}\n"
+                tmp_link_test_n[idx] = f"{tempG.nodes[falGate]['count']} {tempG.nodes[outGate]['count']}\n"
+    
+    # makes sure the links are ordered 
+    for idx in range(len(tmp_link_test)):
+        link_test += tmp_link_test[idx]
+        link_test_n += tmp_link_test_n[idx]
                     
     
     dumpDir = "./data/"
