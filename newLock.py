@@ -40,7 +40,7 @@ def gen_subgraphUpdated(
     if dumpFiles:
         global feat, cell, count, ML_count, link_train
     nodeTag = '_sub_'+end_node
-    anchor_nodes, nodes_to_copy = find_anchor_nodes(G, start_node, end_node, 3)
+    anchor_nodes, nodes_to_copy = find_anchor_nodes(G, start_node, end_node, hop)
     # Step 1: Get all nodes reachable from start_node
     # nodes_to_copy = nx.ancestors(G, start_node)
     nodes_to_copy.add(start_node)
@@ -251,7 +251,7 @@ def selectTargetEdges(tempG:nx.DiGraph, allEligibleEdges, keySize: int, hop=4):
     return unique_1Edges, unique_mEdges
 
 
-def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool):
+def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=2):
     
     key_list = generate_key_list(keySize)
     print(key_list)
@@ -306,7 +306,7 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool):
             # suffix = '_sub_'+v 
             print('c')
             # alter gates randomly half of the time  
-            gen_subgraphUpdated(tempG, u, v, dumpFiles=dumpFiles)
+            gen_subgraphUpdated(tempG, u, v, dumpFiles=dumpFiles, hop=hop)
             print('d')
             
             fGate = f"{u}_sub_{v}"
@@ -391,6 +391,13 @@ def find_anchor_nodes(G: nx.DiGraph, u, v, h):
     # Step 2: Build subgraph
     region_nodes = fanin_u | fanout_u | fanin_v | fanout_v | {u, v}
     nodes_to_copy = (fanin_u | fanout_u | {u}) # - (fanin_v | v | fanout_v)
+    # Inclusiveness guaranteed only for hop 2
+    missed_nodes = set()
+    for i in G.predecessors(u):
+        missed_nodes.update(G.successors(i))
+    for i in G.successors(u): #this and next line added after running c1908K16
+        missed_nodes.update(G.predecessors(i))
+    nodes_to_copy.update(missed_nodes)
     G_sub = G.subgraph(region_nodes).copy()
 
     # Step 3: Remove u and fanout(u), except those that are shared with fanout(v)
