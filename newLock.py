@@ -35,7 +35,7 @@ def alter_gate(gate:str):
     return gatePair[gate.upper()]
 def gen_subgraphUpdated(
     G: nx.DiGraph,
-    start_node, end_node, dumpFiles=False, altGates=True
+    start_node, end_node, dumpFiles=False, altGates=True, hop=2
 ) -> nx.DiGraph:
     if dumpFiles:
         global feat, cell, count, ML_count, link_train
