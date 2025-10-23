@@ -131,9 +131,15 @@ def parse_ckt(bench_file_path: str, dumpFiles:bool) -> nx.DiGraph:
                 isLogicOp = _logicOp.match(line)
                 
                 if isInput:
+                    if isInput.group(1) in tempG.nodes:
+                        print(isInput.group(1), "in")
+                        continue
                     tempG.add_node(isInput.group(1))
                     tempG.nodes[isInput.group(1)]['type'] = 'input'
                 elif isOutput:
+                    if isOutput.group(1) in tempG.nodes:
+                        print(isOutput.group(1), "out")
+                        continue
                     tempG.add_node(isOutput.group(1))
                     tempG.nodes[isOutput.group(1)]['type'] = 'output'
                 elif isLogicOp:
@@ -228,7 +234,7 @@ def selectTargetEdges(tempG:nx.DiGraph, allEligibleEdges, keySize: int, hop=4):
     return unique_1Edges, unique_mEdges
 
 
-def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=2):
+def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3):
     
     key_list = generate_key_list(keySize)
     print(key_list)
