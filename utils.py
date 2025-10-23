@@ -70,3 +70,28 @@ def draw_graph(tempG: nx.DiGraph, name:str = "Graph"):
     nx.draw(tempG, pos, with_labels=True, node_color="lightblue", edge_color="black", node_size=2000, font_size=12, arrows=True)
     plt.title(name)
     plt.show(block=False)
+
+gateVecDict = {
+            'xor':[0,1,0,0,0,0,0,0],
+            'or':[0,0,1,0,0,0,0,0],
+            'xnor':[0,0,0,1,0,0,0,0],
+            'and':[0,0,0,0,1,0,0,0],
+            'nand':[0,0,0,0,0,1,0,0],
+            'buf':[0,0,0,0,0,0,0,1],
+            'not':[0,0,0,0,0,0,1,0],
+            'nor':[1,0,0,0,0,0,0,0],
+        }
+
+def alter_gate(gate:str):
+    gatePair = {
+        'AND': 'NAND',       # 2-input, different logic
+        'NAND': 'AND',       # same as above
+        'OR': 'NOR',         # 2-input, opposite logic
+        'NOR': 'OR',
+        'XOR': 'XNOR',       # both 2-inputs, different logic
+        'XNOR': 'XOR',
+        'NOT': 'BUF',     # 1-input, different logic
+        'BUF': 'NOT',     # passes input unchanged
+        'MUX': 'AND'
+    }
+    return gatePair[gate.upper()]

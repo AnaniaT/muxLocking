@@ -1,7 +1,7 @@
 import os, random, sys, re, copy
 import networkx as nx
 
-from utils import generate_key_list, reconstruct_bench, cleanInWireList
+from utils import generate_key_list, reconstruct_bench, cleanInWireList, gateVecDict, alter_gate
 from tools import *
 
 feat, cell, count = '', '', ''
@@ -9,30 +9,7 @@ ML_count = 0
 link_train = ''
 link_test = ''
 link_test_n = ''
-gateVecDict = {
-            'xor':[0,1,0,0,0,0,0,0],
-            'or':[0,0,1,0,0,0,0,0],
-            'xnor':[0,0,0,1,0,0,0,0],
-            'and':[0,0,0,0,1,0,0,0],
-            'nand':[0,0,0,0,0,1,0,0],
-            'buf':[0,0,0,0,0,0,0,1],
-            'not':[0,0,0,0,0,0,1,0],
-            'nor':[1,0,0,0,0,0,0,0],
-        }
 
-def alter_gate(gate:str):
-    gatePair = {
-        'AND': 'NAND',       # 2-input, different logic
-        'NAND': 'AND',       # same as above
-        'OR': 'NOR',         # 2-input, opposite logic
-        'NOR': 'OR',
-        'XOR': 'XNOR',       # both 2-inputs, different logic
-        'XNOR': 'XOR',
-        'NOT': 'BUF',     # 1-input, different logic
-        'BUF': 'NOT',     # passes input unchanged
-        'MUX': 'AND'
-    }
-    return gatePair[gate.upper()]
 def gen_subgraphUpdated(
     G: nx.DiGraph,
     start_node, end_node, dumpFiles=False, altGates=True, hop=2
