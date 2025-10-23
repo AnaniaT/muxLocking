@@ -1,4 +1,4 @@
-import os, sys, re
+import os, sys, re, copy
 import networkx as nx
 from networkx.algorithms import isomorphism
 from itertools import combinations
@@ -66,13 +66,13 @@ def parse_bench(bench_file_path: str) -> nx.DiGraph:
         
     return tempG
 
-def draw_neat_digraph(G, title=None, name="graph", save=False, node_size=800):
+def draw_neat_digraph(G, title=None, name="graph", save=False, node_size=600):
     # pos = nx.spring_layout(G, seed=42)  # seed ensures reproducible layout
     pos = graphviz_layout(G, prog='dot')
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(10, 8))
     
     nx.draw_networkx_nodes(G, pos, node_size=node_size, node_color='skyblue', edgecolors='black')
-    nx.draw_networkx_edges(G, pos, arrowstyle='->', arrowsize=20, edge_color='gray')
+    nx.draw_networkx_edges(G, pos, arrows=True, arrowsize=20, edge_color='gray')
     nx.draw_networkx_labels(G, pos, font_size=10, font_weight='bold')
 
     if title:
@@ -302,6 +302,51 @@ def gen_modelFiles(bench_file_path: str) -> nx.DiGraph:
         f.write(link_test)
     with open(f'{dumpDir}/link_test_n.txt', "w") as f:
         f.write(link_test_n)
+
+
+def find_anchor_nodesNEW(G: nx.DiGraph, u, v, h):
+    G = copy.deepcopy(G)
+    G.remove_edge(u, v)
+    # Step 1: Collect h-hop cones
+    nei_u = set(nx.ego_graph(G, u, radius=h, undirected=True).nodes)
+    nei_v = set(nx.ego_graph(G, v, radius=h, undirected=True).nodes)
+    G_sub = G.subgraph(nei_u.union(nei_v)).copy()
+    
+    # 
+    nodes_shared = nei_u & nei_v
+    ancestors_to_shared_nodes = nodes_shared.copy()
+    for t in nodes_shared:
+        ancestors = nx.ancestors(G_sub, t)
+        ancestors_to_shared_nodes.update(ancestors & nei_u)
+    print(nei_u & nei_v)
+    print(ancestors_to_shared_nodes)
+    
+    
+def map_indices_to_names(indices, cell_file="./data/c1355_K2_DMUX-/cell.txt"):
+    """
+    Map numeric indices to signal names using a cell.txt file.
+    
+    Args:
+        indices (list[int]): List of numeric indices to map.
+        cell_file (str): Path to the 'cell.txt' mapping file.
+    
+    Returns:
+        dict[int, str]: Mapping {index: signal_name} for all found indices.
+    """
+    mapping = {}
+
+    # Build dictionary from cell.txt
+    with open(cell_file, "r") as f:
+        for line in f:
+            match = re.search(r"(\d+)\s+assign\s+for\s+output\s+([\w_]+(?:_sub_[\w_]+)?)", line.strip(), re.IGNORECASE)
+            if match:
+                idx = int(match.group(1))
+                name = match.group(2)
+                mapping[idx] = name
+
+    # Map requested indices
+    result = {mapping[i] for i in indices}
+    return result
     
 if __name__ == "__main__":    
     # View into the bench file 
