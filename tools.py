@@ -347,6 +347,58 @@ def map_indices_to_names(indices, cell_file="./data/c1355_K2_DMUX-/cell.txt"):
     # Map requested indices
     result = {mapping[i] for i in indices}
     return result
+
+def evaluate_predictions(threshold=0.01):
+    """
+    Evaluate KPA, AC, and PC based on predicted values for false and true links.
+
+    Args:
+        false_table (list of [src, dst, pred]): false link predictions
+        true_table (list of [src, dst, pred]): true link predictions
+        threshold (float): decision threshold for difference
+
+    Returns:
+        dict: containing K_correct, K_incorrect, K_X, KPA, AC, PC
+    """
+    bench = 'c1355_K16'
+    with open(f"./data/Result-nei/{bench}_DMUX/links_test_3__pred.txt") as file:
+        true_table = file.read()
+    with open(f"./data/Result-nei/{bench}_DMUX/link_test_n_3__pred.txt") as file:
+        false_table = file.read()
+    true_table = [l.split(' ') for l in true_table.strip().splitlines()]
+    false_table = [l.split(' ') for l in false_table.strip().splitlines()]
+    assert len(false_table) == len(true_table), "Tables must have same number of rows"
+
+    K_correct = K_incorrect = K_X = 0
+    K_total = len(false_table)
+
+    for i in range(K_total):
+        false_pred = float(false_table[i][2])
+        true_pred = float(true_table[i][2])
+        diff = true_pred - false_pred
+
+        if diff > threshold:
+            K_correct += 1
+        elif diff < -threshold:
+            K_incorrect += 1
+        else:
+            K_X += 1
+
+    # Compute metrics safely
+    denom = (K_total - K_X) if (K_total - K_X) > 0 else 1
+    KPA = 100 * K_correct / denom
+    AC  = 100 * K_correct / K_total
+    PC  = 100 * (K_correct + K_X) / K_total
+
+    print( {
+        "K_correct": K_correct,
+        "K_incorrect": K_incorrect,
+        "K_X": K_X,
+        "K_total": K_total,
+        "KPA (%)": round(KPA, 2),
+        "AC (%)": round(AC, 2),
+        "PC (%)": round(PC, 2)
+    })
     
 if __name__ == "__main__":    
     # View into the bench file 
@@ -360,21 +412,22 @@ if __name__ == "__main__":
     # print(path2)
     
     # # Veiw into the adjlist files from MuxLink
-    # a = nx.read_adjlist('./data/c1355_K4_DMUX/graph-610-310.adjlist')
-    # b = nx.read_adjlist('./data/c1355_K4_DMUX/graph-292-310.adjlist')
+    # a = nx.read_adjlist('./data/c1355_K2_DMUX/graph-576-354.adjlist')
+    # draw_neat_digraph(a)
+    # b = nx.read_adjlist('./data/c1355_K12_DMUX/graph-344-348.adjlist')
     # patha = list(nx.all_simple_paths(a, source='0', target='1', cutoff=7))
     # print("Path a: length: ", len(patha))
-    # print(patha)
+    # print(patha[:4])
     # pathb = list(nx.all_simple_paths(b, source='0', target='1', cutoff=7))
     # print("Path b: length: ", len(pathb))
-    # print(pathb)
+    # print(pathb[:4])
     
     # Generate files for externally locked bench
-    gen_modelFiles("G3_K8.bench")
+    # gen_modelFiles("G3_K8.bench")
     
     # Generate png from adjlist in data dir
     # for fldr in os.listdir('./data'):
-    #     if fldr.startswith('c1355'):
+    #     if fldr == "c1355_K2_DMUX":
     #         adjlist2png('./data/'+fldr)
-            
+    evaluate_predictions()
     print("Done running tools.py")
