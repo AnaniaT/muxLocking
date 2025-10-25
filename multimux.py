@@ -1,0 +1,189 @@
+import networkx as nx
+from utils import gateVecDict, alter_gate
+import sys
+
+def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, dumpFiles=False, altGates=True, getFileDump=None):
+    if dumpFiles:
+        global feat, cell, count, ML_count, link_train, link_test, link_test_n
+        ML_count, feat, cell, count, link_train, link_test, link_test_n = getFileDump()
+        
+    nei_u = set(nx.ego_graph(G, u, radius=h, undirected=True).nodes)
+    nei_v = set(nx.ego_graph(G, v, radius=h, undirected=True).nodes) 
+
+    # Exclude inputs as MuxLink inherently would not see inputs 
+    # (prevents from locking outedges of inputs and encolsing subgraph region resembles MuxLink's exactly)
+    non_input_nodes = {n for n in nei_u.union(nei_v) if G.nodes[n]['type'] != "input"}
+    region = G.subgraph(non_input_nodes).copy()
+    
+    lkd = {(u,v)}
+    mux_outs = {v}
+    visited = {u}
+    curr_level = {u}
+    
+    # Remove u - a first step to separate u-side nodes from v-side nodes
+    nei_v_g = region.subgraph(nei_v).copy()
+    nei_v_g.remove_nodes_from(curr_level)
+    
+    
+    while h > 0:
+        # Traverse one hop on from the current level
+        new_level = set()
+        for n in curr_level:
+            imm_nei = set(nx.ego_graph(region, n, radius=1, undirected=True).nodes)
+            # Avoid traversing to where the mux is going to be inserted (determined to be on v-side already)
+            imm_nei.difference_update(mux_outs)
+            # Avoid already visited nodes in the new level (at this moment, visited also includes the curr_level nodes)
+            imm_nei.difference_update(visited)
+            new_level.update(imm_nei)
+        curr_level = new_level
+        visited.update(curr_level)
+        
+        # Identify the new neighbourhood of v
+        nei_v_g.remove_nodes_from(curr_level)
+        # might consider removing the ancestors of the curr level nodes -- think it thru tho
+        new_nei_v = set(nx.ego_graph(nei_v_g, v, radius=h, undirected=True).nodes)
+        
+        # Identify edges pointing from curr_level to the new nei of v
+        for n in curr_level:
+            v_side_nodes = set(G.successors(n)).intersection(new_nei_v)
+            lkd.update((n, b) for b in v_side_nodes)
+            mux_outs.update(v_side_nodes)
+        
+        # print(curr_level)
+        # Decrement hop
+        h -= 1
+
+    nodeTag = "_sub_"+v
+    mapping = {}
+    for n in visited:
+        if "isKey" in G.nodes[n]:
+            # Prevent postprocessing from picking this as real keyinput
+            mapping[n] = n.replace("keyinput", "key_input")+nodeTag
+        else:                
+            mapping[n] = n+nodeTag
+    
+    relabeled_region = nx.relabel_nodes(region, mapping) 
+    subG = relabeled_region    
+    for node in subG.nodes:
+        # Skip non-replicated nodes (aka non-visited) / using mapping values since we relabelled visited nodes
+        if not node in mapping.values():
+            continue
+        
+        if subG.nodes[node]['type'] == "input":
+            subG.nodes[node].clear()
+            subG.nodes[node].update({"type": "input", "isArt": True})
+        else:
+            if altGates:
+                artNodeGate = alter_gate(subG.nodes[node]['gate'])
+            else:
+                artNodeGate = subG.nodes[node]['gate']   
+            
+            if artNodeGate.upper() == "MUX":  
+                # Only runs if if haven't altered gate and gate is MUX             
+                mDict = {}
+                for k,v in subG.nodes[node]['muxDict'].items():
+                    if k == "key":
+                        mDict["key"] = v.replace("keyinput", "key_input")+nodeTag
+                    else:
+                        mDict[k] = v+nodeTag
+                        
+                subG.nodes[node].clear()
+                subG.nodes[node].update({"type": "mux", "isArt": True, "gate": artNodeGate, "muxDict": mDict})
+                    
+            else:
+                subG.nodes[node].clear()
+                subG.nodes[node].update({"type": "gate", "isArt": True, "gate": artNodeGate})
+        
+                if dumpFiles:
+                    subG.nodes[node]['count'] = ML_count    
+                    feat += f"{' '.join([str(x) for x in gateVecDict[artNodeGate.lower()]])}\n"
+                    cell += f"{ML_count} assign for output {node}\n"
+                    count += f"{ML_count}\n"
+                    ML_count+=1
+                        
+    # Add new replicated edges to the link_train
+    if dumpFiles:
+        for a, b in subG.edges:
+            # Filter only replicated nodes (aka non-visited) / using mapping values since we relabelled visited nodes
+            if a in mapping.values() or b in mapping.values():
+                if 'count' in subG.nodes[a].keys() and 'count' in subG.nodes[b].keys():
+                    link_train += f"{subG.nodes[a]['count']} {subG.nodes[b]['count']}\n"
+
+    # Merge the subgraph into the original graph G
+    G.add_nodes_from(subG.nodes(data=True))
+    G.add_edges_from(subG.edges(data=True))
+
+    # Stitch subgraph and add stiching edges to link_train
+    for n in region.nodes:
+        if n not in mapping.values():
+            continue
+        for pred in G.predecessors(n):
+            if pred not in region.nodes:
+                fake_n = mapping[n]
+                G.add_edge(pred, fake_n)
+                if dumpFiles:
+                    if 'count' in G.nodes[pred].keys() and 'count' in G.nodes[fake_n].keys():
+                        link_train += f"{G.nodes[pred]['count']} {G.nodes[fake_n]['count']}\n"
+    
+    print(len(lkd))
+    # Insert muxes
+    m_c = 2 # Add count num on the extra muxes' names
+    for a, b in lkd:
+        fake_a = mapping[a]
+        G.remove_edge(a, b)
+        G.remove_edge(fake_a, b)
+        muxName = b + "_m1" + "_from_mux"
+        if not (a == u and b == v): # name overwritten for the extra muxes
+            muxName = b + "_m" + str(m_c) + "_from_mux"
+            m_c += 1
+        G.add_edge(muxName, b)
+        G.nodes[muxName]['type'] = 'mux'
+        G.nodes[muxName]['gate'] = 'MUX'
+        
+                
+        G.add_edge(a, muxName)        
+        G.add_edge(fake_a, muxName)  
+        
+        keyNode = 'keyinput' + str(k_c)
+        G.add_node(keyNode, type='input', isKey=True)      
+        G.add_edge(keyNode, muxName)
+        
+        
+        
+        if dumpFiles:
+            try:
+                link_train = link_train.replace(f"{G.nodes[a]['count']} {G.nodes[b]['count']}\n", "")
+            except:
+                print("KeyError", a, b)
+                sys.exit()
+            link_train = link_train.replace(f"{G.nodes[fake_a]['count']} {G.nodes[b]['count']}\n", "")
+            link_test += f"{G.nodes[a]['count']} {G.nodes[b]['count']}\n"
+            link_test_n += f"{G.nodes[fake_a]['count']} {G.nodes[b]['count']}\n"
+
+              
+        # update the muxDict
+        if key_list[k_c] == 0:
+            input0 = a
+            input1 = fake_a
+        else:
+            input0 = fake_a
+            input1 = a
+
+        G.nodes[muxName]['muxDict'] = {"key": keyNode, 0: input0 , 1: input1}
+        k_c += 1
+    
+    # return the next key count and files data
+    if dumpFiles:
+        data = {
+            "feat" : feat,
+            "cell" : cell,
+            "count" : count,
+            "ML_count" : ML_count,
+            "link_train" : link_train,
+            "link_test" : link_test,
+            "link_test_n" : link_test_n
+        }    
+    else:
+        data = {}
+    
+    return k_c, data, lkd

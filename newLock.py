@@ -3,6 +3,7 @@ import networkx as nx
 
 from utils import generate_key_list, reconstruct_bench, cleanInWireList, gateVecDict, alter_gate
 from tools import *
+from multimux import neiSplit
 
 feat, cell, count = '', '', ''
 ML_count = 0 
@@ -102,6 +103,9 @@ def gen_subgraphUpdated(
                 if 'count' in G.nodes[pred].keys() and 'count' in G.nodes[fake_n].keys():
                     link_train += f"{G.nodes[pred]['count']} {G.nodes[fake_n]['count']}\n"
 
+def getFileDump():
+    global ML_count, feat, cell, count, link_train, link_test, link_test_n
+    return ML_count, feat, cell, count, link_train, link_test, link_test_n
 
     
 def parse_ckt(bench_file_path: str, dumpFiles:bool) -> nx.DiGraph:
@@ -206,18 +210,18 @@ def selectTargetEdges(tempG:nx.DiGraph, allEligibleEdges, keySize: int, hop=4):
             break
         
         if u not in used_starts and v not in used_ends:
-            tempG.remove_edge(u, v)
-            # Compute h-hop fanout of u
-            fanout_u = set(nx.ego_graph(tempG, u, radius=hop, undirected=False).nodes)
+            # tempG.remove_edge(u, v)
+            # # Compute h-hop fanout of u
+            # fanout_u = set(nx.ego_graph(tempG, u, radius=hop, undirected=False).nodes)
 
-            # Compute h-hop fanin and fanout of v
-            fanin_v = set(nx.ego_graph(tempG.reverse(), v, radius=hop, undirected=False).nodes)
-            fanout_v = set(nx.ego_graph(tempG, v, radius=hop, undirected=False).nodes)
+            # # Compute h-hop fanin and fanout of v
+            # fanin_v = set(nx.ego_graph(tempG.reverse(), v, radius=hop, undirected=False).nodes)
+            # fanout_v = set(nx.ego_graph(tempG, v, radius=hop, undirected=False).nodes)
 
-            tempG.add_edge(u, v)
-            # Ensure no overlap between fanout of u and (v, fanin_v, fanout_v)
-            if v in fanout_u or fanout_u & fanin_v or fanout_u & fanout_v:
-                continue
+            # tempG.add_edge(u, v)
+            # # Ensure no overlap between fanout of u and (v, fanin_v, fanout_v)
+            # if v in fanout_u or fanout_u & fanin_v or fanout_u & fanout_v:
+            #     continue
             
             if tempG.out_degree(u) == 1 and len(unique_1Edges) < k:
                 unique_1Edges.append((u,v))
@@ -248,7 +252,7 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3):
     print("multi_out",multiOutSelectedEdges)
 
     if dumpFiles:
-        global link_train, link_test, link_test_n
+        global link_train, link_test, link_test_n, feat, cell, count, ML_count 
     """
     try find a way to avoid locking edges that point to the same endNode
     currently using slightly different mux naming 
@@ -258,15 +262,21 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3):
     selectedStarts = {u for u,_ in selected_edges}
     nodeList = {u for u,_ in allEligibleEdges if u not in selectedStarts}
     fPool = set(nodeList)
-    
+    locked_edges = set()
     for u,v in selected_edges:
+        # May not utlize all selected edges if we used multiple muxes for when replicating
+        if c >= keySize:
+            break
+        # Selected edges which happen to be locked during the multi-mux insertion
+        if (u,v) in locked_edges:
+            continue
         # complicit naming as original dmux 
         # (NOTE: naming no longer complicit better to modify the other temporarily)
         # Remove the gateNode to ensure compliance
         muxNode = v+'_from_mux'
         keyNode = 'keyinput' + str(c)
         
-        if c < keySize//2: # first half of selectedGates is oneOut
+        if c > keySize//2: # first half of selectedGates is oneOut
             # Avoid nodes causing loops(successors) and cycles(decendants of successors)
             badFGates = nx.descendants(tempG, v)
             fPool.difference_update(badFGates)
@@ -285,42 +295,51 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3):
             # Code breaks here if fPool is zero (all nodes are reachable from the node to be locked)
             # Sampling from set depreciated apparently i.e used list()
             fGate = random.choice(list(fPool))
-        else:
-            # suffix = '_sub_'+v 
-            print('c')
-            # alter gates randomly half of the time  
-            gen_subgraphUpdated(tempG, u, v, dumpFiles=dumpFiles, hop=hop)
-            print('d')
             
-            fGate = f"{u}_sub_{v}"
+            # This part for the else section is handled internally by the function call
+            tempG.remove_edge(u, v)
+            tempG.add_edge(muxNode, v)
+            tempG.nodes[muxNode]['type'] = 'mux'
+            tempG.nodes[muxNode]['gate'] = 'MUX'
+                    
+            tempG.add_edge(u, muxNode)        
+            tempG.add_edge(fGate, muxNode)  
+            tempG.add_node(keyNode, type='input', isKey=True)      
+            tempG.add_edge(keyNode, muxNode)
+            
+            if dumpFiles:
+                link_train = link_train.replace(f"{tempG.nodes[u]['count']} {tempG.nodes[v]['count']}\n", "")
+                link_test += f"{tempG.nodes[u]['count']} {tempG.nodes[v]['count']}\n"
+                link_test_n += f"{tempG.nodes[fGate]['count']} {tempG.nodes[v]['count']}\n"
         
-        tempG.remove_edge(u, v)
-        tempG.add_edge(muxNode, v)
-        tempG.nodes[muxNode]['type'] = 'mux'
-        tempG.nodes[muxNode]['gate'] = 'MUX'
-                
-        tempG.add_edge(u, muxNode)        
-        tempG.add_edge(fGate, muxNode)  
-        tempG.add_node(keyNode, type='input', isKey=True)      
-        tempG.add_edge(keyNode, muxNode)
-        
-        if dumpFiles:
-            link_train = link_train.replace(f"{tempG.nodes[u]['count']} {tempG.nodes[v]['count']}\n", "")
-            link_test += f"{tempG.nodes[u]['count']} {tempG.nodes[v]['count']}\n"
-            link_test_n += f"{tempG.nodes[fGate]['count']} {tempG.nodes[v]['count']}\n"
-      
-        # update the infoDict
-        if key_list[c] == 0:
-            input0 = u
-            input1 = fGate
-        else:
-            input0 = fGate
-            input1 = u
+            # update the infoDict
+            if key_list[c] == 0:
+                input0 = u
+                input1 = fGate
+            else:
+                input0 = fGate
+                input1 = u
 
-        tempG.nodes[muxNode]['muxDict'] = {"key": keyNode, 0: input0 , 1: input1}
+            tempG.nodes[muxNode]['muxDict'] = {"key": keyNode, 0: input0 , 1: input1}
+            
+            c+=1
+            fPool = set(nodeList) # Restore the fake node pool
+        else:
+            print('c')
+            nxt_c, data, lkd_edges = neiSplit(tempG, u, v, hop, key_list, k_c=c, dumpFiles=dumpFiles, getFileDump=getFileDump)
+            c = nxt_c
+            locked_edges.update(lkd_edges)
+            
+            if dumpFiles:
+                feat = data["feat"]
+                cell = data["cell"]
+                count = data["count"]
+                ML_count = data["ML_count"]
+                link_train = data["link_train"]
+                link_test = data["link_test"]
+                link_test_n = data["link_test_n"]
+            print('d')
         
-        c+=1
-        fPool = set(nodeList) # Restore the fake node pool
        
     return key_list        
 
