@@ -12,8 +12,7 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
 
     # Exclude inputs as MuxLink inherently would not see inputs 
     # (prevents from locking outedges of inputs and encolsing subgraph region resembles MuxLink's exactly)
-    non_input_nodes = {n for n in nei_u.union(nei_v) if G.nodes[n]['type'] != "input"}
-    region = G.subgraph(non_input_nodes).copy()
+    region = G.subgraph(nei_u.union(nei_v)).copy()
     
     lkd = {(u,v)}
     mux_outs = {v}
@@ -34,6 +33,8 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
             imm_nei.difference_update(mux_outs)
             # Avoid already visited nodes in the new level (at this moment, visited also includes the curr_level nodes)
             imm_nei.difference_update(visited)
+            # Avoid inputs (instead shared with the true ckt after stitiching; adding fakes inputs is useless as inputs are removed in MuxLink)
+            imm_nei = {nd for nd in imm_nei if G.nodes[nd]['type'] != "input"}
             new_level.update(imm_nei)
         curr_level = new_level
         visited.update(curr_level)
