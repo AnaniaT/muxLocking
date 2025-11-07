@@ -1,6 +1,6 @@
 import networkx as nx
 from utils import gateVecDict, alter_gate
-import sys
+import sys, random
 
 def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, dumpFiles=False, altGates=True, getFileDump=None):
     if dumpFiles:
@@ -62,7 +62,9 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
             mapping[n] = n.replace("keyinput", "key_input")+nodeTag
         else:                
             mapping[n] = n+nodeTag
-    
+    altArr = [False] * (len(visited)//2) + [True]* (len(visited) - (len(visited)//2))
+    random.shuffle(altArr)
+    altCounter = 0
     relabeled_region = nx.relabel_nodes(region, mapping) 
     subG = relabeled_region    
     for node in subG.nodes:
@@ -73,8 +75,9 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
         if subG.nodes[node]['type'] == "input":
             subG.nodes[node].clear()
             subG.nodes[node].update({"type": "input", "isArt": True})
+            print('Warning: This should not have happend (investigation advised!). ', node, 'is a fake input')
         else:
-            if altGates:
+            if altArr[altCounter]:
                 artNodeGate = alter_gate(subG.nodes[node]['gate'])
             else:
                 artNodeGate = subG.nodes[node]['gate']   
@@ -101,7 +104,9 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
                     cell += f"{ML_count} assign for output {node}\n"
                     count += f"{ML_count}\n"
                     ML_count+=1
-                        
+        
+        altCounter += 1
+            
     # Add new replicated edges to the link_train
     if dumpFiles:
         for a, b in subG.edges:
