@@ -122,7 +122,7 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
 
     # Stitch subgraph and add stiching edges to link_train
     for n in region.nodes:
-        if n not in mapping.values():
+        if n not in mapping.keys():
             continue
         for pred in G.predecessors(n):
             if pred not in region.nodes:
