@@ -2,7 +2,7 @@ import networkx as nx
 from utils import gateVecDict, alter_gate
 import sys, random
 
-def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, dumpFiles=False, altGates=True, getFileDump=None):
+def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, dumpFiles=False, alt_percent:float=0.5, getFileDump=None):
     if dumpFiles:
         global feat, cell, count, ML_count, link_train, link_test, link_test_n
         ML_count, feat, cell, count, link_train, link_test, link_test_n = getFileDump()
@@ -62,7 +62,8 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
             mapping[n] = n.replace("keyinput", "key_input")+nodeTag
         else:                
             mapping[n] = n+nodeTag
-    altArr = [False] * (len(visited)//2) + [True]* (len(visited) - (len(visited)//2))
+    num_alted_gates = int(len(visited)*alt_percent)
+    altArr = [True] * num_alted_gates + [False]* (len(visited) - num_alted_gates)
     random.shuffle(altArr)
     altCounter = 0
     relabeled_region = nx.relabel_nodes(region, mapping) 

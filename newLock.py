@@ -238,7 +238,7 @@ def selectTargetEdges(tempG:nx.DiGraph, allEligibleEdges, keySize: int, hop=4):
     return unique_1Edges, unique_mEdges
 
 
-def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3):
+def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3, alt_percent:float=0.5):
     
     key_list = generate_key_list(keySize)
     print(key_list)
@@ -326,7 +326,7 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3):
             fPool = set(nodeList) # Restore the fake node pool
         else:
             print('c')
-            nxt_c, data, lkd_edges = neiSplit(tempG, u, v, hop, key_list, k_c=c, dumpFiles=dumpFiles, getFileDump=getFileDump)
+            nxt_c, data, lkd_edges = neiSplit(tempG, u, v, hop, key_list, k_c=c, dumpFiles=dumpFiles, getFileDump=getFileDump, alt_percent=alt_percent)
             c = nxt_c
             locked_edges.update(lkd_edges)
             
