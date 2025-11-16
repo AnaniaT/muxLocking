@@ -2,7 +2,22 @@ import networkx as nx
 from utils import gateVecDict, alter_gate
 import sys, random
 
-def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, dumpFiles=False, alt_percent:float=0.5, getFileDump=None):
+def ratio_gate_list(gate_composition: dict, len_multi_inputs:int):
+    # Multi input gates in the whole original circuit
+    multi_in_dist = [k_v for k_v in gate_composition.items() if k_v[0] not in {'not', 'buf', 'mux'}]
+    multi_in_dist.sort(reverse=True, key=lambda k_v:k_v[1])
+    (g1, c1), (g2, c2) = multi_in_dist[:2]
+
+    # Construct list of gate type with ratio preserved
+    total = c1 + c2
+    n1 = round(len_multi_inputs * (c1/total))
+    n2 = len_multi_inputs - n1
+    result = [g1] * n1 + [g2] * n2
+    random.shuffle(result)
+    
+    return result
+
+def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, dumpFiles=False, alt_percent:float=0.5, getFileDump=None, gate_composition=None):
     if dumpFiles:
         global feat, cell, count, ML_count, link_train, link_test, link_test_n
         ML_count, feat, cell, count, link_train, link_test, link_test_n = getFileDump()
@@ -62,10 +77,17 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
             mapping[n] = n.replace("keyinput", "key_input")+nodeTag
         else:                
             mapping[n] = n+nodeTag
-    num_alted_gates = int(len(visited)*alt_percent)
-    altArr = [True] * num_alted_gates + [False]* (len(visited) - num_alted_gates)
-    random.shuffle(altArr)
-    altCounter = 0
+    
+    # Alter gates based on set percent
+    # num_alted_gates = int(len(visited)*alt_percent)
+    # altArr = [True] * num_alted_gates + [False]* (len(visited) - num_alted_gates)
+    # random.shuffle(altArr)
+    # altCounter = 0
+    
+    # Alter gate based on the ratio of the two most frequent multi-input gates in the circuit
+    multi_in_gates = [mapping[gate] for gate in visited if G.in_degree(gate) > 1] # Multi input gates in the neibourhood of u in the encolsing subgraph
+    gateTypeArr = ratio_gate_list(gate_composition, len(multi_in_gates))
+
     relabeled_region = nx.relabel_nodes(region, mapping) 
     subG = relabeled_region    
     for node in subG.nodes:
@@ -78,10 +100,17 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
             subG.nodes[node].update({"type": "input", "isArt": True})
             print('Warning: This should not have happend (investigation advised!). ', node, 'is a fake input')
         else:
-            if altArr[altCounter]:
-                artNodeGate = alter_gate(subG.nodes[node]['gate'])
+            # Alter gates based on ratio if they are multi_inputs otherwise dont alter
+            if node in multi_in_gates:
+                artNodeGate = gateTypeArr[altCounter]
+                altCounter += 1 # When using gate_composition
             else:
-                artNodeGate = subG.nodes[node]['gate']   
+                artNodeGate = subG.nodes[node]['gate']  
+            # Alter gates based on set percent 
+            # if altArr[altCounter]:
+            #     artNodeGate = alter_gate(subG.nodes[node]['gate'])
+            # else:
+            #     artNodeGate = subG.nodes[node]['gate']   
             
             if artNodeGate.upper() == "MUX":  
                 # Only runs if if haven't altered gate and gate is MUX             
@@ -106,7 +135,7 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
                     count += f"{ML_count}\n"
                     ML_count+=1
         
-        altCounter += 1
+        #altCounter += 1 #When using alt_percent
             
     # Add new replicated edges to the link_train
     if dumpFiles:

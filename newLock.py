@@ -11,6 +11,18 @@ link_train = ''
 link_test = ''
 link_test_n = ''
 
+gate_composition = {
+            'xor':0,
+            'or':0,
+            'xnor':0,
+            'and':0,
+            'nand':0,
+            'buf':0,
+            'not':0,
+            'nor':0,
+            'mux': 0 # added just so that locked benchs can also be parsed
+        }
+
 def gen_subgraphUpdated(
     G: nx.DiGraph,
     start_node, end_node, dumpFiles=False, altGates=True, hop=2
@@ -149,6 +161,9 @@ def parse_ckt(bench_file_path: str, dumpFiles:bool) -> nx.DiGraph:
                 elif isLogicOp:
                     outWire, gate, inWires = isLogicOp.groups()
                     
+                    for inwire in cleanInWireList(inWires):
+                        tempG.add_edge(inwire, outWire)
+                        
                     # gateDict[outWire] = gate
                     # Store more mux info (ONLY SUPPORTS 2 TO 1 MUX)
                     if gate.lower() == "mux":
@@ -156,13 +171,14 @@ def parse_ckt(bench_file_path: str, dumpFiles:bool) -> nx.DiGraph:
                         # muxDict[outWire] = {"key": k, 0:i0, 1:i1 }
                         tempG.nodes[outWire]['muxDict'] = {"key": k, 0:i0, 1:i1 }
                     
-                    for inwire in cleanInWireList(inWires):
-                        tempG.add_edge(inwire, outWire)
                     
                     # done so that we dont override the output type setting above
                     if not 'type' in tempG.nodes[outWire].keys():
                         tempG.nodes[outWire]['type'] = 'gate'
                     tempG.nodes[outWire]['gate'] = gate
+                    
+                    # Track gate composition
+                    gate_composition[gate.lower()] += 1
                     
                     if dumpFiles:
                         tempG.nodes[outWire]['count'] = ML_count    
@@ -326,7 +342,7 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3, 
             fPool = set(nodeList) # Restore the fake node pool
         else:
             print('c')
-            nxt_c, data, lkd_edges = neiSplit(tempG, u, v, hop, key_list, k_c=c, dumpFiles=dumpFiles, getFileDump=getFileDump, alt_percent=alt_percent)
+            nxt_c, data, lkd_edges = neiSplit(tempG, u, v, hop, key_list, k_c=c, dumpFiles=dumpFiles, getFileDump=getFileDump, alt_percent=alt_percent, gate_composition=gate_composition)
             c = nxt_c
             locked_edges.update(lkd_edges)
             
