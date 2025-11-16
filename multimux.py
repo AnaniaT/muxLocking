@@ -115,11 +115,11 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
             if artNodeGate.upper() == "MUX":  
                 # Only runs if if haven't altered gate and gate is MUX             
                 mDict = {}
-                for k,v in subG.nodes[node]['muxDict'].items():
+                for k,val in subG.nodes[node]['muxDict'].items():
                     if k == "key":
-                        mDict["key"] = v.replace("keyinput", "key_input")+nodeTag
+                        mDict["key"] = val.replace("keyinput", "key_input")+nodeTag
                     else:
-                        mDict[k] = v+nodeTag
+                        mDict[k] = val+nodeTag
                         
                 subG.nodes[node].clear()
                 subG.nodes[node].update({"type": "mux", "isArt": True, "gate": artNodeGate, "muxDict": mDict})
