@@ -82,7 +82,7 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
     # num_alted_gates = int(len(visited)*alt_percent)
     # altArr = [True] * num_alted_gates + [False]* (len(visited) - num_alted_gates)
     # random.shuffle(altArr)
-    # altCounter = 0
+    altCounter = 0
     
     # Alter gate based on the ratio of the two most frequent multi-input gates in the circuit
     multi_in_gates = [mapping[gate] for gate in visited if G.in_degree(gate) > 1] # Multi input gates in the neibourhood of u in the encolsing subgraph
