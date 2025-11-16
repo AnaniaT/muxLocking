@@ -38,8 +38,8 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
     nei_v_g = region.subgraph(nei_v).copy()
     nei_v_g.remove_nodes_from(curr_level)
     
-    
-    while h > 0:
+    lvl = 1
+    while lvl <= h:
         # Traverse one hop on from the current level
         new_level = set()
         for n in curr_level:
@@ -66,9 +66,9 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
             mux_outs.update(v_side_nodes)
         
         # print(curr_level)
-        # Decrement hop
-        h -= 1
-
+        # Increment hop level
+        lvl += 1    
+    
     nodeTag = "_sub_"+v
     mapping = {}
     for n in visited:
