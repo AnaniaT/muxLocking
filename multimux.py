@@ -17,6 +17,44 @@ def ratio_gate_list(gate_composition: dict, len_multi_inputs:int):
     
     return result
 
+def replace_gate(current_gate, gate_composition):
+    """Replaces with gate with the most frequent and suitable gate to corrcupt funcitonality"""
+    gate_input_map = {
+        'xor': 2,
+        'xnor': 2,
+        'mux': 'many',
+        'or': 'many',
+        'and': 'many',
+        'nand': 'many',
+        'nor': 'many',
+    }
+    
+    # Multi input gates in the whole original circuit in decreasing order of frequency
+    multi_in_dist = [k_v for k_v in gate_composition.items() if k_v[0] not in {'not', 'buf', 'mux'}]
+    multi_in_dist.sort(reverse=True, key=lambda k_v:k_v[1])
+    
+    current_gate = current_gate.lower()
+    # Inputs to the gate to replaced
+    num_inputs = gate_input_map[current_gate]
+    
+    for g, _ in multi_in_dist:
+        if g == current_gate:
+            continue  # must be different
+        
+        req = gate_input_map[g]
+
+        # Case 1: current gate has 2 inputs
+        if num_inputs == 2:
+            # can replace with ANY gate (2-input OR many-input)
+            return g
+
+        # Case 2: current gate has > 2 inputs
+        else:
+            # only replace with a many-input type
+            if req == 'many':
+                return g
+    raise Exception(f'Gate type could not be replaced by any other gate type. Gate: {current_gate}')
+
 def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, dumpFiles=False, alt_percent:float=0.5, getFileDump=None, gate_composition=None):
     if dumpFiles:
         global feat, cell, count, ML_count, link_train, link_test, link_test_n
@@ -87,7 +125,7 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
     
     # Alter gate based on the ratio of the two most frequent multi-input gates in the circuit
     multi_in_gates = [mapping[gate] for gate in visited if G.in_degree(gate) > 1] # Multi input gates in the neibourhood of u in the encolsing subgraph
-    gateTypeArr = ratio_gate_list(gate_composition, len(multi_in_gates))
+    # gateTypeArr = ratio_gate_list(gate_composition, len(multi_in_gates))
 
     relabeled_region = nx.relabel_nodes(region, mapping) 
     subG = relabeled_region    
@@ -103,8 +141,9 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
         else:
             # Alter gates based on ratio if they are multi_inputs otherwise dont alter
             if node in multi_in_gates:
-                artNodeGate = gateTypeArr[altCounter]
-                altCounter += 1 # When using gate_composition
+                artNodeGate = replace_gate(subG.nodes[node]['gate'], gate_composition)
+                # artNodeGate = gateTypeArr[altCounter]
+                # altCounter += 1 # When using gate_composition
             else:
                 artNodeGate = subG.nodes[node]['gate']  
             # Alter gates based on set percent 
