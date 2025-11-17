@@ -75,6 +75,7 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
         if "isKey" in G.nodes[n]:
             # Prevent postprocessing from picking this as real keyinput
             mapping[n] = n.replace("keyinput", "key_input")+nodeTag
+            print(f'Warning: A Primary Input ({n}) found in visited of {u} -> {v} enclosing subgraph.')
         else:                
             mapping[n] = n+nodeTag
     
@@ -189,12 +190,12 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
         if dumpFiles:
             try:
                 link_train = link_train.replace(f"{G.nodes[a]['count']} {G.nodes[b]['count']}\n", "")
-            except:
-                print("KeyError", a, b)
+                link_train = link_train.replace(f"{G.nodes[fake_a]['count']} {G.nodes[b]['count']}\n", "")
+                link_test += f"{G.nodes[a]['count']} {G.nodes[b]['count']}\n"
+                link_test_n += f"{G.nodes[fake_a]['count']} {G.nodes[b]['count']}\n"
+            except Exception as err:
+                print("Error trying to insert mux from ", a, "to", b)
                 sys.exit()
-            link_train = link_train.replace(f"{G.nodes[fake_a]['count']} {G.nodes[b]['count']}\n", "")
-            link_test += f"{G.nodes[a]['count']} {G.nodes[b]['count']}\n"
-            link_test_n += f"{G.nodes[fake_a]['count']} {G.nodes[b]['count']}\n"
 
               
         # update the muxDict
