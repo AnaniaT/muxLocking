@@ -63,9 +63,11 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
     nei_u = set(nx.ego_graph(G, u, radius=h, undirected=True).nodes)
     nei_v = set(nx.ego_graph(G, v, radius=h, undirected=True).nodes) 
 
-    # Exclude inputs as MuxLink inherently would not see inputs 
+    # Exclude inputs(includes keyinpus by default) and MUXs as MuxLink inherently would not 'see' them 
     # (prevents from locking outedges of inputs and encolsing subgraph region resembles MuxLink's exactly)
     region = G.subgraph(nei_u.union(nei_v)).copy()
+    inps_and_muxes = [q for q in region.nodes if region.nodes[q]['type'] == "input" or region.nodes[q]['type'] == "mux"]
+    region.remove_nodes_from(inps_and_muxes)
     
     lkd = {(u,v)}
     mux_outs = {v}
@@ -127,8 +129,9 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
     multi_in_gates = [mapping[gate] for gate in visited if G.in_degree(gate) > 1] # Multi input gates in the neibourhood of u in the encolsing subgraph
     # gateTypeArr = ratio_gate_list(gate_composition, len(multi_in_gates))
 
-    relabeled_region = nx.relabel_nodes(region, mapping) 
-    subG = relabeled_region    
+    # relabeled_region = nx.relabel_nodes(region, mapping) 
+    visited_region = G.subgraph(visited).copy()
+    subG = nx.relabel_nodes(visited_region, mapping)
     for node in subG.nodes:
         # Skip non-replicated nodes (aka non-visited) / using mapping values since we relabelled visited nodes
         if not node in mapping.values():
@@ -190,11 +193,11 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
     G.add_edges_from(subG.edges(data=True))
 
     # Stitch subgraph and add stiching edges to link_train
-    for n in region.nodes:
+    for n in visited:
         if n not in mapping.keys():
             continue
         for pred in G.predecessors(n):
-            if pred not in region.nodes:
+            if pred not in visited:
                 fake_n = mapping[n]
                 G.add_edge(pred, fake_n)
                 if dumpFiles:
@@ -207,7 +210,7 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
     for a, b in lkd:
         fake_a = mapping[a]
         G.remove_edge(a, b)
-        G.remove_edge(fake_a, b)
+        # G.remove_edge(fake_a, b) # There should be no outedge from the fake nodes if we are coping them first 
         muxName = b + "_m1" + "_from_mux"
         if not (a == u and b == v): # name overwritten for the extra muxes
             muxName = b + "_m" + str(m_c) + "_from_mux"
