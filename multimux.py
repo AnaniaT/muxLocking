@@ -199,6 +199,13 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
         for pred in G.predecessors(n):
             if pred not in visited:
                 fake_n = mapping[n]
+                # Make sure inputs are also replicated 
+                # (b/c they are removed during subgraph extraction as does MuxLink)
+                if G.nodes[pred]['type'] == "input":
+                    fake_inp = pred+nodeTag
+                    G.add_node(fake_inp, type="input", isArt=True)
+                    G.add_edge(fake_inp, fake_n)                    
+                    continue
                 G.add_edge(pred, fake_n)
                 if dumpFiles:
                     if 'count' in G.nodes[pred].keys() and 'count' in G.nodes[fake_n].keys():

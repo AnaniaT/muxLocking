@@ -210,6 +210,14 @@ def selectTargetEdges(tempG:nx.DiGraph, allEligibleEdges, keySize: int, hop=4):
     # End nodes should except locking muxes (they appear when the gateNode had been selected as false wire)
     # Avoids nested locking
 
+    # Get all input nodes
+    input_nodes = {n for n in tempG.nodes if tempG.nodes[n]['type'] == 'input'}
+    
+    # Compute h-hop fanout from all input nodes
+    input_h_hop_fanout = set()
+    for inp in input_nodes:
+        input_h_hop_fanout.update(nx.ego_graph(tempG, inp, radius=hop, undirected=False).nodes)
+
     # Shuffle the list to ensure randomness
     random.shuffle(allEligibleEdges)
 
@@ -226,6 +234,10 @@ def selectTargetEdges(tempG:nx.DiGraph, allEligibleEdges, keySize: int, hop=4):
             break
         
         if u not in used_starts and v not in used_ends:
+            # Check if both u and v are close to input nodes (within h-hop)
+            if u not in input_h_hop_fanout or v not in input_h_hop_fanout:
+                continue
+            
             # tempG.remove_edge(u, v)
             # # Compute h-hop fanout of u
             # fanout_u = set(nx.ego_graph(tempG, u, radius=hop, undirected=False).nodes)
