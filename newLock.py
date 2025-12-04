@@ -289,85 +289,100 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3, 
     selected_edges = oneOutSelectedEdges + multiOutSelectedEdges
     selectedStarts = {u for u,_ in selected_edges}
     nodeList = {u for u,_ in allEligibleEdges if u not in selectedStarts}
-    fPool = set(nodeList)
+    # fPool = set(nodeList)
     locked_edges = set()
-    for u,v in selected_edges:
+    for u,v in multiOutSelectedEdges:
         # May not utlize all selected edges if we used multiple muxes for when replicating
         if c >= keySize:
             break
         # Selected edges which happen to be locked during the multi-mux insertion
         if (u,v) in locked_edges:
             continue
+        
+        # Stop as soon as you have used at least half of the keys 
+        if c >= keySize//2:
+            break
+            
+        print('c')
+        nxt_c, data, lkd_edges = neiSplit(tempG, u, v, hop, key_list, k_c=c, dumpFiles=dumpFiles, getFileDump=getFileDump, alt_percent=alt_percent, gate_composition=gate_composition)
+        c = nxt_c
+        locked_edges.update(lkd_edges)
+        
+        if dumpFiles:
+            feat = data["feat"]
+            cell = data["cell"]
+            count = data["count"]
+            ML_count = data["ML_count"]
+            link_train = data["link_train"]
+            link_test = data["link_test"]
+            link_test_n = data["link_test_n"]
+        print('d')
+    
+    print('Second Half:', c, 'up to', keySize-1)
+    # Make sure only multiout false gates are selected
+    multiOutNodeList = {x for x in nodeList if tempG.out_degree(x) > 1}
+    fPool = set(multiOutNodeList)
+    for u,v in oneOutSelectedEdges:
+        # Stop when we have enough edges locked (Both sections combined run upto keySize-1 times) 
+        if c == keySize:
+            break
+        # Selected edges which happen to be locked during the multi-mux insertion
+        if (u,v) in locked_edges:
+            continue
+        
         # complicit naming as original dmux 
         # (NOTE: naming no longer complicit better to modify the other temporarily)
         # Remove the gateNode to ensure compliance
         muxNode = v+'_from_mux'
         keyNode = 'keyinput' + str(c)
-        
-        if c > keySize//2: # first half of selectedGates is oneOut
-            # Avoid nodes causing loops(successors) and cycles(decendants of successors)
-            badFGates = nx.descendants(tempG, v)
-            fPool.difference_update(badFGates)
-            fPool.difference_update(selectedStarts)
-            # Avoid reselection
-            # fPool.discard(u) # Already included in selectedStarts
-            # Avoid self-selection
-            fPool.discard(v)
-            
-            # Should also remove nodes that already point to the endnode here
-            # But this is left intentionally
-            
-            # Should also remove nodes that are already picked as fGate here
-            # But this is left intentionally as well
-            
-            # Code breaks here if fPool is zero (all nodes are reachable from the node to be locked)
-            # Sampling from set depreciated apparently i.e used list()
-            fGate = random.choice(list(fPool))
-            
-            # This part for the else section is handled internally by the function call
-            tempG.remove_edge(u, v)
-            tempG.add_edge(muxNode, v)
-            tempG.nodes[muxNode]['type'] = 'mux'
-            tempG.nodes[muxNode]['gate'] = 'MUX'
-                    
-            tempG.add_edge(u, muxNode)        
-            tempG.add_edge(fGate, muxNode)  
-            tempG.add_node(keyNode, type='input', isKey=True)      
-            tempG.add_edge(keyNode, muxNode)
-            
-            if dumpFiles:
-                link_train = link_train.replace(f"{tempG.nodes[u]['count']} {tempG.nodes[v]['count']}\n", "")
-                link_test += f"{tempG.nodes[u]['count']} {tempG.nodes[v]['count']}\n"
-                link_test_n += f"{tempG.nodes[fGate]['count']} {tempG.nodes[v]['count']}\n"
-        
-            # update the infoDict
-            if key_list[c] == 0:
-                input0 = u
-                input1 = fGate
-            else:
-                input0 = fGate
-                input1 = u
 
-            tempG.nodes[muxNode]['muxDict'] = {"key": keyNode, 0: input0 , 1: input1}
-            
-            c+=1
-            fPool = set(nodeList) # Restore the fake node pool
-        else:
-            print('c')
-            nxt_c, data, lkd_edges = neiSplit(tempG, u, v, hop, key_list, k_c=c, dumpFiles=dumpFiles, getFileDump=getFileDump, alt_percent=alt_percent, gate_composition=gate_composition)
-            c = nxt_c
-            locked_edges.update(lkd_edges)
-            
-            if dumpFiles:
-                feat = data["feat"]
-                cell = data["cell"]
-                count = data["count"]
-                ML_count = data["ML_count"]
-                link_train = data["link_train"]
-                link_test = data["link_test"]
-                link_test_n = data["link_test_n"]
-            print('d')
+        # Avoid nodes causing loops(successors) and cycles(decendants of successors)
+        badFGates = nx.descendants(tempG, v)
+        fPool.difference_update(badFGates)
+        fPool.difference_update(selectedStarts)
+        # Avoid reselection
+        # fPool.discard(u) # Already included in selectedStarts
+        # Avoid self-selection
+        fPool.discard(v)
+
+        # Should also remove nodes that already point to the endnode here
+        # But this is left intentionally
         
+        # Should also remove nodes that are already picked as fGate here
+        # But this is left intentionally as well
+        
+        # Code breaks here if fPool is zero (all nodes are reachable from the node to be locked)
+        # Sampling from set depreciated apparently i.e used list()
+        fGate = random.choice(list(fPool))
+        
+        # This part for the mux insertion section is handled internally by the function call
+        tempG.remove_edge(u, v)
+        tempG.add_edge(muxNode, v)
+        tempG.nodes[muxNode]['type'] = 'mux'
+        tempG.nodes[muxNode]['gate'] = 'MUX'
+                
+        tempG.add_edge(u, muxNode)        
+        tempG.add_edge(fGate, muxNode)  
+        tempG.add_node(keyNode, type='input', isKey=True)      
+        tempG.add_edge(keyNode, muxNode)
+        
+        if dumpFiles:
+            link_train = link_train.replace(f"{tempG.nodes[u]['count']} {tempG.nodes[v]['count']}\n", "")
+            link_test += f"{tempG.nodes[u]['count']} {tempG.nodes[v]['count']}\n"
+            link_test_n += f"{tempG.nodes[fGate]['count']} {tempG.nodes[v]['count']}\n"
+    
+        # update the infoDict
+        if key_list[c] == 0:
+            input0 = u
+            input1 = fGate
+        else:
+            input0 = fGate
+            input1 = u
+
+        tempG.nodes[muxNode]['muxDict'] = {"key": keyNode, 0: input0 , 1: input1}
+        
+        c+=1
+        fPool = set(multiOutNodeList) # Restore the fake node pool
        
     return key_list        
 
