@@ -291,32 +291,59 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3, 
     nodeList = {u for u,_ in allEligibleEdges if u not in selectedStarts}
     # fPool = set(nodeList)
     locked_edges = set()
-    for u,v in multiOutSelectedEdges:
-        # May not utlize all selected edges if we used multiple muxes for when replicating
-        if c >= keySize:
-            break
-        # Selected edges which happen to be locked during the multi-mux insertion
-        if (u,v) in locked_edges:
-            continue
-        
-        # Stop as soon as you have used at least half of the keys 
-        if c >= keySize//2:
-            break
+    newEligibleEdgesPool = set(allEligibleEdges) 
+    while c < keySize//2:
+        for u,v in multiOutSelectedEdges:
+            # May not utlize all selected edges if we used multiple muxes for when replicating
+            if c >= keySize:
+                break
+            # Selected edges which happen to be locked during the multi-mux insertion
+            if (u,v) in locked_edges:
+                continue
             
-        print('c')
-        nxt_c, data, lkd_edges = neiSplit(tempG, u, v, hop, key_list, k_c=c, dumpFiles=dumpFiles, getFileDump=getFileDump, alt_percent=alt_percent, gate_composition=gate_composition)
-        c = nxt_c
-        locked_edges.update(lkd_edges)
+            # Stop as soon as you have used at least half of the keys 
+            if c >= keySize//2:
+                break
+                
+            print('c')
+            nxt_c, data, lkd_edges, isSuccess = neiSplit(tempG, u, v, hop, key_list, k_c=c, dumpFiles=dumpFiles, getFileDump=getFileDump, alt_percent=alt_percent, gate_composition=gate_composition)
+            if not isSuccess:
+                continue
+                
+            c = nxt_c
+            locked_edges.update(lkd_edges)
+            
+            if dumpFiles:
+                feat = data["feat"]
+                cell = data["cell"]
+                count = data["count"]
+                ML_count = data["ML_count"]
+                link_train = data["link_train"]
+                link_test = data["link_test"]
+                link_test_n = data["link_test_n"]
+            print('d')
         
-        if dumpFiles:
-            feat = data["feat"]
-            cell = data["cell"]
-            count = data["count"]
-            ML_count = data["ML_count"]
-            link_train = data["link_train"]
-            link_test = data["link_test"]
-            link_test_n = data["link_test_n"]
-        print('d')
+        # Avoids selecting additional edges if we already met the required number of locked 
+        if c >= keySize//2:
+            print('While Loop ended at', c)
+            break
+        
+        # Remove already tried and done multi out and one out edges
+        newEligibleEdgesPool -= set(multiOutSelectedEdges)
+        newEligibleEdgesPool -= set(oneOutSelectedEdges)
+        try:
+            # Select new multi out edges
+            _oneOuts, multiOutSelectedEdges = selectTargetEdges(tempG, list(newEligibleEdgesPool), keySize)
+            oneOutSelectedEdges.extend(_oneOuts)
+        except Exception as e:
+            if str(e).startswith("Graph is not suitable for locking"):
+                break
+            else:
+                raise e
+        
+        
+        print('While Loop ended at', c)
+        
     
     print('Second Half:', c, 'up to', keySize-1)
     # Make sure only multiout false gates are selected

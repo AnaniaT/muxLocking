@@ -109,6 +109,10 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
         # Increment hop level
         lvl += 1    
     
+    max_visited_size = 2
+    if len(visited) > max_visited_size:
+        return k_c, None, None, 
+    
     nodeTag = "_sub_"+v
     mapping = {}
     for n in visited:
@@ -272,4 +276,4 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
     else:
         data = {}
     
-    return k_c, data, lkd
+    return k_c, data, lkd, True
