@@ -109,9 +109,10 @@ def neiSplit(G: nx.DiGraph, u:str, v:str, h:int, key_list: list[int], k_c:int, d
         # Increment hop level
         lvl += 1    
     
+    # Set a limit to the number of nodes copied at each round
     max_visited_size = 2
     if len(visited) > max_visited_size:
-        return k_c, None, None, 
+        return k_c, None, None, False
     
     nodeTag = "_sub_"+v
     mapping = {}
