@@ -290,6 +290,15 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3, 
     selectedStarts = {u for u,_ in selected_edges}
     nodeList = {u for u,_ in allEligibleEdges if u not in selectedStarts}
     # fPool = set(nodeList)
+    # Set the false gate pool close to PI
+    # Get all input nodes
+    input_nodes = {n for n in tempG.nodes if tempG.nodes[n]['type'] == 'input'}
+    # Compute h-hop fanout from all input nodes
+    nodeListClosePI = set()
+    for inp in input_nodes:
+        nodeListClosePI.update(nx.ego_graph(tempG, inp, radius=hop, undirected=False).nodes)
+    nodeListClosePI.intersection_update(nodeList)
+        
     locked_edges = set()
     newEligibleEdgesPool = set(allEligibleEdges) 
     while c < keySize//2:
@@ -347,8 +356,8 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3, 
     
     print('Second Half:', c, 'up to', keySize-1)
     # Make sure only multiout false gates are selected
-    multiOutNodeList = {x for x in nodeList if tempG.out_degree(x) > 1}
-    fPool = set(multiOutNodeList)
+    multiOutNodeListClosePI = {x for x in nodeListClosePI if tempG.out_degree(x) > 1}
+    fPool = set(multiOutNodeListClosePI)
     for u,v in oneOutSelectedEdges:
         # Stop when we have enough edges locked (Both sections combined run upto keySize-1 times) 
         if c == keySize:
@@ -409,8 +418,7 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3, 
         tempG.nodes[muxNode]['muxDict'] = {"key": keyNode, 0: input0 , 1: input1}
         
         c+=1
-        fPool = set(multiOutNodeList) # Restore the fake node pool
-       
+        fPool = set(multiOutNodeListClosePI) # Restore the fake node pool
     return key_list        
 
 
