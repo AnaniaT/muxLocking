@@ -154,7 +154,7 @@ def parse_ckt(bench_file_path: str, dumpFiles:bool) -> nx.DiGraph:
                     tempG.nodes[isInput.group(1)]['type'] = 'input'
                 elif isOutput:
                     if isOutput.group(1) in tempG.nodes:
-                        print(isOutput.group(1), "out")
+                        # print(isOutput.group(1), "out")
                         continue
                     tempG.add_node(isOutput.group(1))
                     tempG.nodes[isOutput.group(1)]['type'] = 'output'
@@ -304,7 +304,7 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3, 
         muxNode = v+'_from_mux'
         keyNode = 'keyinput' + str(c)
         
-        if c > keySize//2: # first half of selectedGates is oneOut
+        if c > (keySize-3): #//2: # first half of selectedGates is oneOut
             # Avoid nodes causing loops(successors) and cycles(decendants of successors)
             badFGates = nx.descendants(tempG, v)
             fPool.difference_update(badFGates)
@@ -457,10 +457,15 @@ def find_anchor_nodes(G: nx.DiGraph, u, v, h):
 
 
 # main('mid', 2, dumpFiles=False, drawGraph=True)
-main('c1355', 2, dumpFiles=True, drawGraph=False)
-main('c1355', 4, dumpFiles=True, drawGraph=False)
-main('c1355', 6, dumpFiles=True, drawGraph=False)
-main('c1355', 12, dumpFiles=True, drawGraph=False)
+ 
+# main('c2670', 64, dumpFiles=True, drawGraph=False)
+# main('c2670', 128, dumpFiles=True, drawGraph=False)
+# main('c3540', 64, dumpFiles=True, drawGraph=False)
+# main('c3540', 128, dumpFiles=True, drawGraph=False)
+# main('c5315', 64, dumpFiles=True, drawGraph=False)
+# main('c5315', 128, dumpFiles=True, drawGraph=False)
+# main('c6288', 64, dumpFiles=True, drawGraph=False)
+# main('c6288', 128, dumpFiles=True, drawGraph=False)
 # g, _ = parse_ckt('./data/mid_K4_DMUX/mid_K4.bench', False)
 # draw_neat_digraph(g, "midK4")
 
