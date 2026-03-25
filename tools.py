@@ -264,7 +264,7 @@ def gen_modelFiles(bench_file_path: str) -> nx.DiGraph:
     for n in tempG.nodes:
         if tempG.nodes[n]["type"] == "output" or tempG.nodes[n]["type"] == "gate":
             if tempG.nodes[n]["gate"].lower() == "mux":
-                idx = int(tempG.nodes[n]["muxDict"]["key"][-1])
+                idx = int(tempG.nodes[n]["muxDict"]["key"].replace("keyinput", ""))
                 key = keyList[idx]
                 
                 truGate = tempG.nodes[n]["muxDict"][key]
