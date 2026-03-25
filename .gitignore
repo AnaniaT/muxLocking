@@ -11,3 +11,5 @@ data-*/
 result/
 subgraphs*/
 *.bench
+Graph Analysis/
+extracted_keys/
