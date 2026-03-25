@@ -5,6 +5,8 @@ from itertools import combinations
 from collections import defaultdict
 import matplotlib.pyplot as plt
 from networkx.drawing.nx_pydot import graphviz_layout
+import scipy.sparse as ssp
+import numpy as np
 
 def cleanInWireList(inWiresStr: str):
     inWiresStr.strip()
@@ -264,7 +266,7 @@ def gen_modelFiles(bench_file_path: str) -> nx.DiGraph:
     for n in tempG.nodes:
         if tempG.nodes[n]["type"] == "output" or tempG.nodes[n]["type"] == "gate":
             if tempG.nodes[n]["gate"].lower() == "mux":
-                idx = int(tempG.nodes[n]["muxDict"]["key"][-1])
+                idx = int(tempG.nodes[n]["muxDict"]["key"].replace("keyinput", ""))
                 key = keyList[idx]
                 
                 truGate = tempG.nodes[n]["muxDict"][key]
@@ -399,6 +401,73 @@ def evaluate_predictions(threshold=0.01):
         "AC (%)": round(AC, 2),
         "PC (%)": round(PC, 2)
     })
+
+
+# Copied as is from MuxLinks codebase
+def node_label(subgraph):
+    # The original double-radius node labeling (DRNL), taken from SEAL platform.
+    K = subgraph.shape[0]
+    subgraph_wo0 = subgraph[1:, 1:]
+    subgraph_wo1 = subgraph[[0]+list(range(2, K)), :][:, [0]+list(range(2, K))]
+    dist_to_0 = ssp.csgraph.shortest_path(subgraph_wo0, directed=False, unweighted=True)
+    dist_to_0 = dist_to_0[1:, 0]
+    dist_to_1 = ssp.csgraph.shortest_path(subgraph_wo1, directed=False, unweighted=True)
+    dist_to_1 = dist_to_1[1:, 0]
+    d = (dist_to_0 + dist_to_1).astype(int)
+    d_over_2, d_mod_2 = np.divmod(d, 2)
+    labels = 1 + np.minimum(dist_to_0, dist_to_1).astype(int) + d_over_2 * (d_over_2 + d_mod_2 - 1)
+    labels = np.concatenate((np.array([1, 1]), labels))
+    labels[np.isinf(labels)] = 0
+    labels[labels>1e6] = 0  # set inf labels to 0
+    labels[labels<-1e6] = 0  # set -inf labels to 0
+    return labels
+
+def get_drnl(subgraph: nx.Graph, u, v, show_plot=False):
+    if subgraph.number_of_nodes() == 0:
+        return {}
+
+    if u not in subgraph or v not in subgraph:
+        raise ValueError("Both u and v must exist in the provided subgraph")
+
+    if u == v:
+        raise ValueError("u and v must be different node IDs")
+
+    # DRNL expects an undirected adjacency matrix where the first two nodes
+    # correspond to the source pair (label 1). Force u and v to be 0 and 1.
+    node_order = list(subgraph.nodes())
+    remaining = [n for n in node_order if n not in {u, v}]
+    node_order = [u, v] + remaining
+
+    adj = nx.to_scipy_sparse_array(subgraph.to_undirected(), nodelist=node_order, format="csr", dtype=np.int8)
+    labels = node_label(adj)
+
+    drnl_by_node = {node: int(label) for node, label in zip(node_order, labels)}
+    nx.set_node_attributes(subgraph, drnl_by_node, "drnl")
+
+    if show_plot:
+        pos = graphviz_layout(subgraph, prog='dot')
+        label_text = {n: f"{n}\nDRNL:{drnl_by_node[n]}" for n in subgraph.nodes()}
+        node_colors = []
+        for n in subgraph.nodes():
+            if n == u:
+                node_colors.append('tomato')
+            elif n == v:
+                node_colors.append('gold')
+            else:
+                node_colors.append('skyblue')
+
+        plt.figure(figsize=(10, 8))
+        nx.draw_networkx_nodes(subgraph, pos, node_size=650, node_color=node_colors, edgecolors='black')
+        nx.draw_networkx_edges(subgraph, pos, arrows=nx.is_directed(subgraph), arrowsize=20, edge_color='gray')
+        nx.draw_networkx_labels(subgraph, pos, labels=label_text, font_size=9, font_weight='bold')
+
+        plt.title(f"DRNL labels for Subgraph ({u} -> {v})")
+
+        plt.axis('off')
+        plt.tight_layout()
+        plt.show()
+
+    return drnl_by_node
     
 if __name__ == "__main__":    
     # View into the bench file 
@@ -429,5 +498,40 @@ if __name__ == "__main__":
     # for fldr in os.listdir('./data'):
     #     if fldr == "c1355_K2_DMUX":
     #         adjlist2png('./data/'+fldr)
-    evaluate_predictions()
+    # evaluate_predictions()
+    
+    # Extract subgraph
+    G = parse_bench('./data/c1355_K32_DMUX/c1355_K32.bench')
+    # print()
+    # for k,v in dict(nx.triangles(G.to_undirected())).items():
+    #     if v > 0:
+    #         print(k,v)
+    #         break
+            
+    
+    # u, v = "G408gat", 'G495gat'
+    u, v = "G912gat", 'G495gat'
+    G.remove_node(f"{v}_from_mux")
+    input_nodes = {n for n in G.nodes if G.nodes[n]['type'] == 'input'}
+    G.remove_nodes_from(input_nodes)
+    
+    hop = 1
+    hood = nx.ego_graph(
+        G, u, radius=hop, undirected=True
+    ).nodes
+    
+    hood2 = nx.ego_graph(
+        G, v, radius=hop, undirected=True
+    ).nodes
+
+    neighborhood_nodes = set(hood) | set(hood2)
+    
+    subgraph = G.subgraph(neighborhood_nodes).copy()
+    
+    # Plot subgraph  
+    # draw_neat_digraph(subgraph)
+    
+    # Plot subgraph (after being cleaned) with DRNL labels
+    get_drnl(subgraph, u, v, True)
+    
     print("Done running tools.py")

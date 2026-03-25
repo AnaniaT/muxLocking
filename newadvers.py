@@ -11,114 +11,6 @@ link_train = ''
 link_test = ''
 link_test_n = ''
 
-gate_composition = {
-            'xor':0,
-            'or':0,
-            'xnor':0,
-            'and':0,
-            'nand':0,
-            'buf':0,
-            'not':0,
-            'nor':0,
-            'mux': 0 # added just so that locked benchs can also be parsed
-        }
-
-def gen_subgraphUpdated(
-    G: nx.DiGraph,
-    start_node, end_node, dumpFiles=False, altGates=True, hop=2
-) -> nx.DiGraph:
-    if dumpFiles:
-        global feat, cell, count, ML_count, link_train
-    nodeTag = '_sub_'+end_node
-    anchor_nodes, nodes_to_copy = find_anchor_nodes(G, start_node, end_node, hop)
-    # Step 1: Get all nodes reachable from start_node
-    # nodes_to_copy = nx.ancestors(G, start_node)
-    nodes_to_copy.add(start_node)
-
-    # Step 2: Create a mapping of old -> new node IDs
-    mapping = {}
-    for n in nodes_to_copy:
-        if n in anchor_nodes:
-            mapping[n] = n  # shared node
-        else:
-            if "isKey" in G.nodes[n]:
-                # Prevent postprocessing from picking this as real keyinput
-                mapping[n] = n.replace("keyinput", "key_input")+nodeTag
-            else:                
-                mapping[n] = n+nodeTag 
-
-    # Step 3: Create the subgraph copy
-    subGo = G.subgraph(nodes_to_copy).copy()
-
-    # Step 4: Relabel nodes
-    subG = nx.relabel_nodes(subGo, mapping)
-
-    # Step 5: Edit node attributes
-    for node in subG.nodes:
-        if node in anchor_nodes:
-            continue
-        
-        if subG.nodes[node]['type'] == "input":
-            # G.add_node(artNode, type='input', isArt=True)
-            subG.nodes[node].clear()
-            subG.nodes[node].update({"type": "input", "isArt": True})
-        else:
-            if altGates:
-                artNodeGate = alter_gate(subG.nodes[node]['gate'])
-            else:
-                artNodeGate = subG.nodes[node]['gate']   
-            
-            if artNodeGate.upper() == "MUX":               
-                # G.add_node(artNode, type='mux', isArt=True, gate=artNodeGate)
-                mDict = {}
-                for k,v in subG.nodes[node]['muxDict'].items():
-                    if k == "key":
-                        mDict["key"] = v.replace("keyinput", "key_input")+nodeTag
-                    else:
-                        mDict[k] = v+nodeTag
-                        
-                # G.nodes[artNode]['muxDict'] = mDict
-                subG.nodes[node].clear()
-                subG.nodes[node].update({"type": "mux", "isArt": True, "gate": artNodeGate, "muxDict": mDict})
-                    
-            else:
-                # G.add_node(artNode, type='gate', isArt=True, gate=artNodeGate)
-                subG.nodes[node].clear()
-                subG.nodes[node].update({"type": "gate", "isArt": True, "gate": artNodeGate})
-        
-                if dumpFiles:
-                    subG.nodes[node]['count'] = ML_count    
-                    feat += f"{' '.join([str(x) for x in gateVecDict[artNodeGate.lower()]])}\n"
-                    cell += f"{ML_count} assign for output {node}\n"
-                    count += f"{ML_count}\n"
-                    ML_count+=1
-                        
-    # Step 6: Add edges to the link_train
-    for u, v in subG.edges:
-        # Avoid adding the fake start_node to the link_train
-        if u != mapping[start_node]:
-            if 'count' in subG.nodes[u].keys() and 'count' in subG.nodes[v].keys():
-                link_train += f"{subG.nodes[u]['count']} {subG.nodes[v]['count']}\n"
-
-    # Step 7: Merge the subgraph into the original graph G
-    G.add_nodes_from(subG.nodes(data=True))
-    G.add_edges_from(subG.edges(data=True))
-
-    # Stitch subgraph
-    for n in subGo.nodes:
-        if n in anchor_nodes:
-            continue
-        for pred in G.predecessors(n):
-            if pred not in subGo.nodes:
-                fake_n = mapping[n]
-                G.add_edge(pred, fake_n)
-                if 'count' in G.nodes[pred].keys() and 'count' in G.nodes[fake_n].keys():
-                    link_train += f"{G.nodes[pred]['count']} {G.nodes[fake_n]['count']}\n"
-
-def getFileDump():
-    global ML_count, feat, cell, count, link_train, link_test, link_test_n
-    return ML_count, feat, cell, count, link_train, link_test, link_test_n
-
     
 def parse_ckt(bench_file_path: str, dumpFiles:bool) -> nx.DiGraph:
     tempG = nx.DiGraph()
@@ -176,10 +68,7 @@ def parse_ckt(bench_file_path: str, dumpFiles:bool) -> nx.DiGraph:
                     if not 'type' in tempG.nodes[outWire].keys():
                         tempG.nodes[outWire]['type'] = 'gate'
                     tempG.nodes[outWire]['gate'] = gate
-                    
-                    # Track gate composition
-                    gate_composition[gate.lower()] += 1
-                    
+                                        
                     if dumpFiles:
                         tempG.nodes[outWire]['count'] = ML_count    
                         feat += f"{' '.join([str(x) for x in gateVecDict[gate.lower()]])}\n"
@@ -289,89 +178,21 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3, 
     selected_edges = oneOutSelectedEdges + multiOutSelectedEdges
     selectedStarts = {u for u,_ in selected_edges}
     nodeList = {u for u,_ in allEligibleEdges if u not in selectedStarts}
-    # fPool = set(nodeList)
-    # Set the false gate pool close to PI
-    # Get all input nodes
-    input_nodes = {n for n in tempG.nodes if tempG.nodes[n]['type'] == 'input'}
-    # Compute h-hop fanout from all input nodes
-    nodeListClosePI = set()
-    for inp in input_nodes:
-        nodeListClosePI.update(nx.ego_graph(tempG, inp, radius=hop, undirected=False).nodes)
-    nodeListClosePI.intersection_update(nodeList)
-        
+    fPool = set(nodeList)
     locked_edges = set()
-    newEligibleEdgesPool = set(allEligibleEdges) 
-    while c < keySize//2:
-        for u,v in multiOutSelectedEdges:
-            # May not utlize all selected edges if we used multiple muxes for when replicating
-            if c >= keySize:
-                break
-            # Selected edges which happen to be locked during the multi-mux insertion
-            if (u,v) in locked_edges:
-                continue
-            
-            # Stop as soon as you have used at least half of the keys 
-            if c >= keySize//2:
-                break
-                
-            print('c')
-            nxt_c, data, lkd_edges, isSuccess = neiSplit(tempG, u, v, hop, key_list, k_c=c, dumpFiles=dumpFiles, getFileDump=getFileDump, alt_percent=alt_percent, gate_composition=gate_composition)
-            if not isSuccess:
-                continue
-                
-            c = nxt_c
-            locked_edges.update(lkd_edges)
-            
-            if dumpFiles:
-                feat = data["feat"]
-                cell = data["cell"]
-                count = data["count"]
-                ML_count = data["ML_count"]
-                link_train = data["link_train"]
-                link_test = data["link_test"]
-                link_test_n = data["link_test_n"]
-            print('d')
-        
-        # Avoids selecting additional edges if we already met the required number of locked 
-        if c >= keySize//2:
-            print('While Loop ended at', c)
-            break
-        
-        # Remove already tried and done multi out and one out edges
-        newEligibleEdgesPool -= set(multiOutSelectedEdges)
-        newEligibleEdgesPool -= set(oneOutSelectedEdges)
-        try:
-            # Select new multi out edges
-            _oneOuts, multiOutSelectedEdges = selectTargetEdges(tempG, list(newEligibleEdgesPool), keySize)
-            oneOutSelectedEdges.extend(_oneOuts)
-        except Exception as e:
-            if str(e).startswith("Graph is not suitable for locking"):
-                break
-            else:
-                raise e
-        
-        
-        print('While Loop ended at', c)
-        
-    
-    print('Second Half:', c, 'up to', keySize-1)
-    # Make sure only multiout false gates are selected
-    multiOutNodeListClosePI = {x for x in nodeListClosePI if tempG.out_degree(x) > 1}
-    fPool = set(multiOutNodeListClosePI)
-    for u,v in oneOutSelectedEdges:
-        # Stop when we have enough edges locked (Both sections combined run upto keySize-1 times) 
-        if c == keySize:
+    for u,v in selected_edges:
+        # May not utlize all selected edges if we used multiple muxes for when replicating
+        if c >= keySize:
             break
         # Selected edges which happen to be locked during the multi-mux insertion
         if (u,v) in locked_edges:
             continue
-        
         # complicit naming as original dmux 
         # (NOTE: naming no longer complicit better to modify the other temporarily)
         # Remove the gateNode to ensure compliance
         muxNode = v+'_from_mux'
         keyNode = 'keyinput' + str(c)
-
+        
         # Avoid nodes causing loops(successors) and cycles(decendants of successors)
         badFGates = nx.descendants(tempG, v)
         fPool.difference_update(badFGates)
@@ -380,7 +201,7 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3, 
         # fPool.discard(u) # Already included in selectedStarts
         # Avoid self-selection
         fPool.discard(v)
-
+        
         # Should also remove nodes that already point to the endnode here
         # But this is left intentionally
         
@@ -391,7 +212,7 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3, 
         # Sampling from set depreciated apparently i.e used list()
         fGate = random.choice(list(fPool))
         
-        # This part for the mux insertion section is handled internally by the function call
+        # This part for the else section is handled internally by the function call
         tempG.remove_edge(u, v)
         tempG.add_edge(muxNode, v)
         tempG.nodes[muxNode]['type'] = 'mux'
@@ -418,7 +239,8 @@ def insertMuxUpdated(tempG:nx.DiGraph, keySize: int, dumpFiles:bool, hop:int=3, 
         tempG.nodes[muxNode]['muxDict'] = {"key": keyNode, 0: input0 , 1: input1}
         
         c+=1
-        fPool = set(multiOutNodeListClosePI) # Restore the fake node pool
+        fPool = set(nodeList) # Restore the fake node pool
+       
     return key_list        
 
 
@@ -459,65 +281,8 @@ def main(bench, kSize, dumpFiles=False, drawGraph=False):
     if drawGraph:
         draw_neat_digraph(G, "New Lock")
 
-def find_anchor_nodes(G: nx.DiGraph, u, v, h):
-    G = copy.deepcopy(G)
-    G.remove_edge(u, v)
-    # Step 1: Collect h-hop cones
-    fanin_u = set(nx.ego_graph(G.reverse(), u, radius=h, undirected=False).reverse().nodes)
-    fanout_u = set(nx.ego_graph(G, u, radius=h, undirected=False).nodes)
-    fanin_v = set(nx.ego_graph(G.reverse(), v, radius=h, undirected=False).reverse().nodes)
-    fanout_v = set(nx.ego_graph(G, v, radius=h, undirected=False).nodes)
 
-    # Step 2: Build subgraph
-    region_nodes = fanin_u | fanout_u | fanin_v | fanout_v | {u, v}
-    nodes_to_copy = (fanin_u | fanout_u | {u}) # - (fanin_v | v | fanout_v)
-    # Inclusiveness guaranteed only for hop 2
-    missed_nodes = set()
-    for i in G.predecessors(u):
-        missed_nodes.update(G.successors(i))
-    for i in G.successors(u): #this and next line added after running c1908K16
-        missed_nodes.update(G.predecessors(i))
-    nodes_to_copy.update(missed_nodes)
-    G_sub = G.subgraph(region_nodes).copy()
-
-    # Step 3: Remove u and fanout(u), except those that are shared with fanout(v)
-    shared_nodes = fanout_u & (fanout_v | fanin_v | {v})
-    forbidden_nodes = {u} | (fanout_u - shared_nodes)
-    G_sub.remove_nodes_from(forbidden_nodes)
-
-    # Step 4: Identify frontier targets in fanout(v)
-    frontier_targets = {
-        t for t in fanout_v
-        if not any(succ in fanout_v for succ in G_sub.successors(t))
-    }
-
-    # Step 5: Compute anchors via ancestors of frontier targets
-    anchor_nodes = set()
-    for t in frontier_targets:
-        ancestors = nx.ancestors(G_sub, t)
-        anchor_nodes.update(ancestors & fanin_u)
-    
-    if len(anchor_nodes) > 0:
-        print(f"Anchors for {u} -> {v}: ", end="")
-        for i in anchor_nodes:
-            print(f"{i}, ", end="")
-        print()
-
-    return anchor_nodes, nodes_to_copy
-
-
-# main('mid', 2, dumpFiles=False, drawGraph=True)
- 
-# main('c2670', 64, dumpFiles=True, drawGraph=False)
-# main('c2670', 128, dumpFiles=True, drawGraph=False)
-# main('c3540', 64, dumpFiles=True, drawGraph=False)
-# main('c3540', 128, dumpFiles=True, drawGraph=False)
-# main('c5315', 64, dumpFiles=True, drawGraph=False)
-# main('c5315', 128, dumpFiles=True, drawGraph=False)
-# main('c6288', 64, dumpFiles=True, drawGraph=False)
-# main('c6288', 128, dumpFiles=True, drawGraph=False)
-# g, _ = parse_ckt('./data/mid_K4_DMUX/mid_K4.bench', False)
-# draw_neat_digraph(g, "midK4")
+main('c1355', 32, dumpFiles=True, drawGraph=False)
 
 
 print('Done running newLock.py')
