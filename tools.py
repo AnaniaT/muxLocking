@@ -447,9 +447,17 @@ def get_drnl(subgraph: nx.Graph, u, v, show_plot=False):
     if show_plot:
         pos = graphviz_layout(subgraph, prog='dot')
         label_text = {n: f"{n}\nDRNL:{drnl_by_node[n]}" for n in subgraph.nodes()}
+        node_colors = []
+        for n in subgraph.nodes():
+            if n == u:
+                node_colors.append('tomato')
+            elif n == v:
+                node_colors.append('gold')
+            else:
+                node_colors.append('skyblue')
 
         plt.figure(figsize=(10, 8))
-        nx.draw_networkx_nodes(subgraph, pos, node_size=650, node_color='skyblue', edgecolors='black')
+        nx.draw_networkx_nodes(subgraph, pos, node_size=650, node_color=node_colors, edgecolors='black')
         nx.draw_networkx_edges(subgraph, pos, arrows=nx.is_directed(subgraph), arrowsize=20, edge_color='gray')
         nx.draw_networkx_labels(subgraph, pos, labels=label_text, font_size=9, font_weight='bold')
 
@@ -501,8 +509,9 @@ if __name__ == "__main__":
     #         break
             
     
-    u, v = "G1281gat", 'G1318gat'
-    G.remove_node("G1318gat_from_mux")
+    # u, v = "G408gat", 'G495gat'
+    u, v = "G912gat", 'G495gat'
+    G.remove_node(f"{v}_from_mux")
     input_nodes = {n for n in G.nodes if G.nodes[n]['type'] == 'input'}
     G.remove_nodes_from(input_nodes)
     
