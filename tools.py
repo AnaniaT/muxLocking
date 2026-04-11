@@ -347,7 +347,7 @@ def map_indices_to_names(indices, cell_file="./data/c1355_K2_DMUX-/cell.txt"):
                 mapping[idx] = name
 
     # Map requested indices
-    result = {mapping[i] for i in indices}
+    result = {i:mapping[i] for i in indices}
     return result
 
 def evaluate_predictions(threshold=0.01):
@@ -507,29 +507,126 @@ if __name__ == "__main__":
     #     if v > 0:
     #         print(k,v)
     #         break
+    
+    
+    subg_as_counts = [
+      204.0,
+      272.0,
+      256.0,
+      264.0,
+      273.0,
+      288.0,
+      290.0,
+      291.0,
+      296.0,
+      299.0,
+      302.0,
+      305.0,
+      306.0,
+      307.0,
+      328.0,
+      329.0,
+      330.0,
+      331.0,
+      332.0,
+      334.0,
+      336.0,
+      337.0,
+      338.0,
+      339.0,
+      344.0,
+      345.0,
+      346.0,
+      347.0,
+      348.0,
+      349.0,
+      350.0,
+      351.0,
+      352.0,
+      353.0,
+      354.0,
+      358.0,
+      362.0,
+      366.0,
+      112.0,
+      113.0,
+      114.0,
+      115.0,
+      370.0,
+      371.0,
+      372.0,
+      375.0,
+      120.0,
+      121.0,
+      376.0,
+      377.0,
+      373.0,
+      374.0,
+      386.0,
+      390.0,
+      394.0,
+      140.0,
+      141.0,
+      398.0,
+      144.0,
+      160.0,
+      161.0,
+      162.0,
+      163.0,
+      419.0,
+      168.0,
+      169.0,
+      427.0,
+      435.0,
+      443.0,
+      188.0,
+      189.0,
+      190.0,
+      191.0,
+      192.0,
+      206.0,
+      207.0,
+      216.0,
+      217.0,
+      220.0,
+      221.0,
+      222.0,
+      223.0,
+      228.0,
+      230.0,
+      231.0,
+      232.0,
+      240.0,
+      241.0
+    ]
             
+    mapping = map_indices_to_names([int(x) for x in subg_as_counts], "./data/c1355_K32_DMUX/cell.txt")
+    subgraph = G.subgraph(mapping.values()).copy()
+    print(mapping[subg_as_counts[0]], "->", mapping[subg_as_counts[1]])
+    # Plot subgraph  
+    draw_neat_digraph(subgraph)
     
     # u, v = "G408gat", 'G495gat'
     # Extract h-hop Enclosing subgraph of u,v 
-    u, v = "G417gat", 'G1346gat'
-    G.remove_node(f"{v}_from_mux")
-    input_nodes = {n for n in G.nodes if G.nodes[n]['type'] == 'input'}
-    mux_nodes = {n for n in G.nodes if 'gate' in G.nodes[n] and G.nodes[n]['gate'].upper() == 'MUX'}
-    G.remove_nodes_from(input_nodes)
-    G.remove_nodes_from(mux_nodes)
+    # u, v = "G417gat", 'G1346gat'
+    # G.remove_node(f"{v}_from_mux")
+    # input_nodes = {n for n in G.nodes if G.nodes[n]['type'] == 'input'}
+    # mux_nodes = {n for n in G.nodes if 'gate' in G.nodes[n] and G.nodes[n]['gate'].upper() == 'MUX'}
+    # G.remove_nodes_from(input_nodes)
+    # G.remove_nodes_from(mux_nodes)
     
-    hop = 2
-    hood = nx.ego_graph(
-        G, u, radius=hop, undirected=True
-    ).nodes
+    # hop = 2
+    # hood = nx.ego_graph(
+    #     G, u, radius=hop, undirected=True
+    # ).nodes
     
-    hood2 = nx.ego_graph(
-        G, v, radius=hop, undirected=True
-    ).nodes
+    # hood2 = nx.ego_graph(
+    #     G, v, radius=hop, undirected=True
+    # ).nodes
 
-    neighborhood_nodes = set(hood) | set(hood2)
+    # neighborhood_nodes = set(hood) | set(hood2)
     
-    subgraph = G.subgraph(neighborhood_nodes).copy()
+    # subgraph = G.subgraph(neighborhood_nodes).copy()
     
     # Plot subgraph  
     # draw_neat_digraph(subgraph)
@@ -539,28 +636,28 @@ if __name__ == "__main__":
     
     
     # Get just the subgraph as bench text
-    inputs = ""
-    outputs = ""
-    logicOps = ""
-    for node in subgraph.nodes:
-        if G.in_degree(node) == 0: # might catch floating nodes
-            inputs += f"INPUT({node})\n"
-        else:
-            if G.out_degree(node) == 0:
-                outputs += f"OUTPUT({node})\n"
+    # inputs = ""
+    # outputs = ""
+    # logicOps = ""
+    # for node in subgraph.nodes:
+    #     if G.in_degree(node) == 0: # might catch floating nodes
+    #         inputs += f"INPUT({node})\n"
+    #     else:
+    #         if G.out_degree(node) == 0:
+    #             outputs += f"OUTPUT({node})\n"
             
-            # gateName = gateDict[node]
-            gateName = G.nodes[node]['gate'].upper()
-            if gateName == "MUX":
-                # mux = muxDict[node]
-                mux = G.nodes[node]['muxDict']
-                inWiresStr = f"{mux['key']}, {mux[0]}, {mux[1]}"
-            else:
-                inWiresStr = ", ".join(G.predecessors(node))
+    #         # gateName = gateDict[node]
+    #         gateName = G.nodes[node]['gate'].upper()
+    #         if gateName == "MUX":
+    #             # mux = muxDict[node]
+    #             mux = G.nodes[node]['muxDict']
+    #             inWiresStr = f"{mux['key']}, {mux[0]}, {mux[1]}"
+    #         else:
+    #             inWiresStr = ", ".join(G.predecessors(node))
                 
-            logicOps += f"{node} = {gateName}({inWiresStr})\n"
+    #         logicOps += f"{node} = {gateName}({inWiresStr})\n"
     
-    print(inputs)
-    print(outputs)
-    print(logicOps)
+    # print(inputs)
+    # print(outputs)
+    # print(logicOps)
     print("Done running tools.py")
