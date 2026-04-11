@@ -510,12 +510,15 @@ if __name__ == "__main__":
             
     
     # u, v = "G408gat", 'G495gat'
-    u, v = "G912gat", 'G495gat'
+    # Extract h-hop Enclosing subgraph of u,v 
+    u, v = "G417gat", 'G1346gat'
     G.remove_node(f"{v}_from_mux")
     input_nodes = {n for n in G.nodes if G.nodes[n]['type'] == 'input'}
+    mux_nodes = {n for n in G.nodes if 'gate' in G.nodes[n] and G.nodes[n]['gate'].upper() == 'MUX'}
     G.remove_nodes_from(input_nodes)
+    G.remove_nodes_from(mux_nodes)
     
-    hop = 1
+    hop = 2
     hood = nx.ego_graph(
         G, u, radius=hop, undirected=True
     ).nodes
@@ -532,6 +535,32 @@ if __name__ == "__main__":
     # draw_neat_digraph(subgraph)
     
     # Plot subgraph (after being cleaned) with DRNL labels
-    get_drnl(subgraph, u, v, True)
+    # get_drnl(subgraph, u, v, True)
     
+    
+    # Get just the subgraph as bench text
+    inputs = ""
+    outputs = ""
+    logicOps = ""
+    for node in subgraph.nodes:
+        if G.in_degree(node) == 0: # might catch floating nodes
+            inputs += f"INPUT({node})\n"
+        else:
+            if G.out_degree(node) == 0:
+                outputs += f"OUTPUT({node})\n"
+            
+            # gateName = gateDict[node]
+            gateName = G.nodes[node]['gate'].upper()
+            if gateName == "MUX":
+                # mux = muxDict[node]
+                mux = G.nodes[node]['muxDict']
+                inWiresStr = f"{mux['key']}, {mux[0]}, {mux[1]}"
+            else:
+                inWiresStr = ", ".join(G.predecessors(node))
+                
+            logicOps += f"{node} = {gateName}({inWiresStr})\n"
+    
+    print(inputs)
+    print(outputs)
+    print(logicOps)
     print("Done running tools.py")
